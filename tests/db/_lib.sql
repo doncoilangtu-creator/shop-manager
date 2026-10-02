@@ -16,7 +16,7 @@ create or replace function pg_temp.act_as(r text, sub uuid default null)
 returns void language plpgsql as $f$
 begin
   perform set_config('request.jwt.claims',
-    case when r = 'anon' then json_build_object('role','anon')::text
+    case when r in ('anon','service_role') then json_build_object('role', r)::text
          else json_build_object('role', r, 'sub', coalesce(sub, gen_random_uuid()))::text end, true);
   execute 'set local role ' || quote_ident(r);
 end $f$;
@@ -40,4 +40,17 @@ begin
     execute format('insert into public.app_users(user_id, role) values (%L, %L)', u, p_role);
   end if;
   return u;
+end $f$;
+
+-- Run a statement, return 'OK' or the error message (keeps the surrounding txn alive)
+create or replace function pg_temp.try(stmt text) returns text language plpgsql as $f$
+begin execute stmt; return 'OK'; exception when others then return sqlerrm; end $f$;
+-- Walk a fresh ticket to a given status (fixture, superuser)
+create or replace function pg_temp.ticket_in(st text) returns uuid language plpgsql as $f$
+declare t uuid := pg_temp.mk_ticket();
+begin
+  if st in ('in_progress','completed','awaiting_signature') then update public.maintenance_tickets set status = 'in_progress' where id = t; end if;
+  if st in ('completed','awaiting_signature') then update public.maintenance_tickets set status = 'completed' where id = t; end if;
+  if st = 'awaiting_signature' then update public.maintenance_tickets set status = 'awaiting_signature' where id = t; end if;
+  return t;
 end $f$;

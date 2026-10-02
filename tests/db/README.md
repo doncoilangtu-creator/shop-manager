@@ -16,6 +16,12 @@ bash scripts/local-db.sh psql          # interactive shell;  stop | status | url
 Env: `SHOP_PGDATA` (default `~/.local/share/shop-manager/pgdata`), `SHOP_PGPORT` (54329), `SHOP_PGSOCK` (`/tmp/shop-manager-pg`), `KEEP_DB=1`.
 `up` is idempotent: it drops/recreates `shop_test` every time (same end state).
 
+## Status after C2 (migration 0003)
+`bash tests/db/run.sh --strict` → `weaknesses CONFIRMED=0 NOT_REPRODUCIBLE=16 | controls OK=60 FAIL=0`; baseline (0001+0002 only,
+`SHOP_MIGRATE_UPTO=0002 bash scripts/local-db.sh up`) → `CONFIRMED=16`. Same cases, same ids: the baseline run proves the
+updated tests still detect every old weakness. Cases 08-13 are new controls for the RPCs, state machine, legacy upgrade and
+parallel sessions (13 found and fixed a real deadlock in the first version of `sign_ticket`).
+
 ## How a test works
 Each `cases/*.sql` runs in one transaction that is **rolled back**. Fixtures are inserted as superuser, then the test
 does what PostgREST does: `SET LOCAL ROLE anon|authenticated|service_role` + `set_config('request.jwt.claims', …)`.

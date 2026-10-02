@@ -122,7 +122,10 @@ export interface StockMovement {
   id: UUID;
   product_id: UUID;
   type: StockMovementType;
+  /** integer (C2). in/out: > 0; adjust: signed non-zero delta */
   qty: number;
+  /** generated: -qty for 'out', else qty */
+  qty_delta: number;
   unit_cost: number | null;
   ref_type: string | null;
   ref_id: UUID | null;
@@ -229,5 +232,13 @@ export interface Notification {
   type: string;
   payload: Record<string, unknown>;
   read_at: ISODate | null;
+  created_at: ISODate;
+}
+
+/** Staff allow-list (migration 0003): only these Auth users pass RLS. */
+export interface AppUser {
+  user_id: UUID;
+  role: "owner" | "staff";
+  active: boolean;
   created_at: ISODate;
 }

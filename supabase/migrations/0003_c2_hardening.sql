@@ -201,6 +201,7 @@ create or replace function public.sign_ticket(
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_tok public.signature_tokens%rowtype;
+  v_tid uuid;
   v_status public.ticket_status;
   v_roles text[];
   v_both boolean;
@@ -215,14 +216,18 @@ begin
     raise exception 'signer_name_invalid';
   end if;
 
-  select * into v_tok from public.signature_tokens where token = p_token for update;
+  -- Lock order is always ticket -> token (two sessions with different tokens of the same
+  -- ticket used to deadlock when the token row was locked first).
+  select ticket_id into v_tid from public.signature_tokens where token = p_token;
   if not found then raise exception 'token_not_found'; end if;
-  if v_tok.used_at is not null then raise exception 'token_used'; end if;
-  if v_tok.expires_at <= now() then raise exception 'token_expired'; end if;
-  if v_tok.ticket_id <> p_ticket_id then raise exception 'token_ticket_mismatch'; end if;
+  if v_tid <> p_ticket_id then raise exception 'token_ticket_mismatch'; end if;
 
   select status into v_status from public.maintenance_tickets where id = p_ticket_id for update;
   if not found then raise exception 'ticket_not_found'; end if;
+
+  select * into v_tok from public.signature_tokens where token = p_token for update;
+  if v_tok.used_at is not null then raise exception 'token_used'; end if;
+  if v_tok.expires_at <= now() then raise exception 'token_expired'; end if;
   if v_status not in ('completed','awaiting_signature') then raise exception 'ticket_not_signable'; end if;
 
   begin
