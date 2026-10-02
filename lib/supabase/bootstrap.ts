@@ -27,7 +27,7 @@ export function validateAdminPassword(pw: string | undefined): string | null {
 }
 
 export async function bootstrapAdmin(
-  admin: Pick<SupabaseClient, "auth">,
+  admin: Pick<SupabaseClient, "auth" | "rpc">,
   env: { email?: string; password?: string } = {
     email: process.env.INITIAL_ADMIN_EMAIL,
     password: process.env.INITIAL_ADMIN_PASSWORD,
@@ -43,10 +43,17 @@ export async function bootstrapAdmin(
     password: env.password!,
     email_confirm: true,
   });
-  if (!error) return { ok: true, status: "created", email };
-  // Idempotent: already registered is fine (no need to list/scan users).
-  if (/already|registered|exists/i.test(error.message) || (error as { code?: string }).code === "email_exists") {
-    return { ok: true, status: "exists", email };
+  let status: "created" | "exists" = "created";
+  if (error) {
+    // Idempotent: already registered is fine (no need to list/scan users).
+    if (/already|registered|exists/i.test(error.message) || (error as { code?: string }).code === "email_exists") {
+      status = "exists";
+    } else {
+      return { ok: false, error: error.message };
+    }
   }
-  return { ok: false, error: error.message };
+  // Migration 0003: only users in app_users pass RLS -> grant the bootstrap user owner access.
+  const { error: grantErr } = await admin.rpc("grant_staff", { p_email: email, p_role: "owner" });
+  if (grantErr) return { ok: false, error: "grant_staff failed (is migration 0003 applied?): " + grantErr.message };
+  return { ok: true, status, email };
 }

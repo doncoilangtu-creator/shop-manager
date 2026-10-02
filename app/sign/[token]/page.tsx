@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getTokenInfo, getSignedRoles } from "@/lib/signing";
 import { SignForm } from "./sign-form";
 
 interface PageProps {
@@ -9,17 +9,8 @@ interface PageProps {
 export default async function SignPage(props: PageProps) {
   const params = await props.params;
   const { token } = params;
-  const supabase = await createClient();
-
-  const { data: row, error } = await supabase
-    .from("signature_tokens")
-    .select(
-      "id, ticket_id, expires_at, used_at, maintenance_tickets(id, code, title, description, customer_id, customers(name))",
-    )
-    .eq("token", token)
-    .maybeSingle();
-
-  if (error || !row) notFound();
+  const row = await getTokenInfo(token);
+  if (!row) notFound();
   if (row.used_at) {
     return (
       <main className="flex min-h-screen items-center justify-center p-4">
@@ -46,27 +37,11 @@ export default async function SignPage(props: PageProps) {
     );
   }
 
-  const ticket = Array.isArray(row.maintenance_tickets)
-    ? row.maintenance_tickets[0]
-    : row.maintenance_tickets;
+  const ticket = row.ticket;
+  const customer = ticket ? { name: ticket.customer_name } : null;
 
-  const customer = ticket
-    ? (ticket as unknown as { customers: { name: string }[] | { name: string } | null }).customers
-      ? Array.isArray((ticket as unknown as { customers: unknown }).customers)
-        ? ((ticket as unknown as { customers: { name: string }[] }).customers[0] ?? null)
-        : ((ticket as unknown as { customers: { name: string } | null }).customers ?? null)
-      : null
-    : null;
-
-  // Already-signed check: if both customer + technician already exist,
-  // don't let the user re-sign.
-  const { data: existingSigs } = await supabase
-    .from("signatures")
-    .select("signer_role")
-    .eq("ticket_id", row.ticket_id);
-  const rolesSigned = new Set(
-    (existingSigs ?? []).map((s) => s.signer_role as string),
-  );
+  // Already-signed check: don't let a role sign twice (DB also enforces it).
+  const rolesSigned = await getSignedRoles(row.ticket_id);
 
   return (
     <main className="min-h-screen bg-muted/30 p-4">

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { bootstrapAdmin, validateAdminPassword } from "@/lib/supabase/bootstrap";
 
-const mk = (error: { message: string } | null) => ({
+const mk = (error: { message: string } | null, rpcError: { message: string } | null = null) => ({
   auth: { admin: { createUser: vi.fn().mockResolvedValue({ data: {}, error }) } },
+  rpc: vi.fn().mockResolvedValue({ data: null, error: rpcError }),
 });
 
 describe("bootstrapAdmin", () => {
@@ -20,6 +21,11 @@ describe("bootstrapAdmin", () => {
     const r = await bootstrapAdmin(c as never, { email: " Boss@Shop.vn ", password: "a-long-enough-pass-1" });
     expect(r).toEqual({ ok: true, status: "created", email: "boss@shop.vn" });
     expect(c.auth.admin.createUser).toHaveBeenCalledWith({ email: "boss@shop.vn", password: "a-long-enough-pass-1", email_confirm: true });
+    expect(c.rpc).toHaveBeenCalledWith("grant_staff", { p_email: "boss@shop.vn", p_role: "owner" });
+  });
+  it("reports a missing migration when grant_staff fails", async () => {
+    const r = await bootstrapAdmin(mk(null, { message: "function grant_staff does not exist" }) as never, { password: "a-long-enough-pass-1" });
+    expect(r.ok).toBe(false);
   });
   it("is idempotent when the user already exists", async () => {
     const r = await bootstrapAdmin(mk({ message: "A user with this email address has already been registered" }) as never, { password: "a-long-enough-pass-1" });
