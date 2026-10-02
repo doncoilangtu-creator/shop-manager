@@ -4,28 +4,15 @@ import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { ContractSchema, ContractUpdateSchema, LogSchema, TicketSchema, contractPatchFromForm, parseParts, slaDueAt } from "@/lib/maintenance-input";
 import { nextStatuses, issueSignatureToken } from "@/lib/maintenance";
 import { generateCode } from "@/lib/codes";
 import { insertWithGeneratedCode, pgErrorMessage } from "@/lib/actions/_shared";
 import type { TicketStatus } from "@/types/db";
 
 // ============================================================
-// MAINTENANCE CONTRACT ACTIONS
+// MAINTENANCE CONTRACT ACTIONS  (user client => RLS "is_staff" applies; no service-role needed)
 // ============================================================
-
-const ContractSchema = z.object({
-  customer_id: z.string().uuid(),
-  code: z.string().min(1).max(50).optional(),
-  start_date: z.string().min(1),
-  end_date: z.string().min(1),
-  scope: z.string().optional().default(""),
-  devices_description: z.string().optional().default(""),
-  monthly_fee: z.coerce.number().min(0).default(0),
-  sla_hours: z.coerce.number().int().min(1).default(24),
-  status: z.enum(["active", "expired", "cancelled"]).default("active"),
-});
 
 export async function createContractAction(formData: FormData) {
   const auth = await requireUser();
@@ -41,18 +28,15 @@ export async function createContractAction(formData: FormData) {
     sla_hours: formData.get("sla_hours") || 24,
     status: formData.get("status") || "active",
   });
-
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.issues.map((i) => i.message).join(", ") };
   }
 
-  const admin = createAdminClient();
   const { data, error } = await insertWithGeneratedCode<{ id: string }>(
     () => parsed.data.code ?? generateCode("HD"),
-    (code) => admin.from("maintenance_contracts").insert({ ...parsed.data, code }).select("id").single(),
+    (code) => auth.supabase.from("maintenance_contracts").insert({ ...parsed.data, code }).select("id").single(),
     parsed.data.code ? 1 : 5, // a code typed by the user is never silently replaced
   );
-
   if (error || !data) return { ok: false as const, error: error ? pgErrorMessage(error) : "Không tạo được hợp đồng" };
   revalidatePath("/maintenance/contracts");
   redirect(`/maintenance/contracts/${data.id}`);
@@ -61,25 +45,18 @@ export async function createContractAction(formData: FormData) {
 export async function updateContractAction(id: string, formData: FormData) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
-  const parsed = ContractSchema.partial().safeParse({
-    customer_id: formData.get("customer_id"),
-    start_date: formData.get("start_date"),
-    end_date: formData.get("end_date"),
-    scope: formData.get("scope") || "",
-    devices_description: formData.get("devices_description") || "",
-    monthly_fee: formData.get("monthly_fee") || 0,
-    sla_hours: formData.get("sla_hours") || 24,
-    status: formData.get("status") || "active",
-  });
-
+  const parsed = ContractUpdateSchema.safeParse(contractPatchFromForm(formData));
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.issues.map((i) => i.message).join(", ") };
   }
+  const patch = parsed.data;
+  if (patch.start_date && patch.end_date && patch.end_date < patch.start_date) {
+    return { ok: false as const, error: "Ngày kết thúc phải sau ngày bắt đầu" };
+  }
+  if (Object.keys(patch).length === 0) return { ok: false as const, error: "Không có thay đổi" };
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("maintenance_contracts").update(parsed.data).eq("id", id);
-
-  if (error) return { ok: false as const, error: error.message };
+  const { error } = await auth.supabase.from("maintenance_contracts").update(patch).eq("id", id);
+  if (error) return { ok: false as const, error: pgErrorMessage(error) };
   revalidatePath(`/maintenance/contracts/${id}`);
   revalidatePath("/maintenance/contracts");
   return { ok: true as const };
@@ -88,9 +65,11 @@ export async function updateContractAction(id: string, formData: FormData) {
 export async function deleteContractAction(id: string) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
-  const admin = createAdminClient();
-  const { error } = await admin.from("maintenance_contracts").delete().eq("id", id);
-  if (error) return { ok: false as const, error: error.message };
+  const { error } = await auth.supabase.from("maintenance_contracts").delete().eq("id", id);
+  if (error) {
+    if (error.code === "23503") return { ok: false as const, error: "Không thể xóa: hợp đồng đã có ticket bảo trì. Hãy chuyển trạng thái sang Đã hủy." };
+    return { ok: false as const, error: pgErrorMessage(error) };
+  }
   revalidatePath("/maintenance/contracts");
   return { ok: true as const };
 }
@@ -98,20 +77,6 @@ export async function deleteContractAction(id: string) {
 // ============================================================
 // MAINTENANCE TICKET ACTIONS
 // ============================================================
-
-const TicketSchema = z.object({
-  customer_id: z.string().uuid(),
-  contract_id: z.string().uuid().nullable().optional(),
-  title: z.string().min(1).max(200),
-  description: z.string().optional().default(""),
-  priority: z.enum(["low", "medium", "high"]).default("medium"),
-  device_info: z.string().optional().default(""),
-});
-
-function generateTicketCode(): string {
-  const ts = Date.now().toString(36).toUpperCase();
-  return `TK-${ts.slice(-6)}`;
-}
 
 export async function createTicketAction(formData: FormData) {
   const auth = await requireUser();
@@ -124,54 +89,47 @@ export async function createTicketAction(formData: FormData) {
     priority: formData.get("priority") || "medium",
     device_info: formData.get("device_info") || "",
   });
-
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.issues.map((i) => i.message).join(", ") };
   }
 
-  const admin = createAdminClient();
-  const code = generateTicketCode();
-  const slaHours = parsed.data.contract_id
-    ? await getContractSla(parsed.data.contract_id)
-    : 24;
-  const slaDueAt = new Date(Date.now() + slaHours * 60 * 60 * 1000).toISOString();
+  let slaHours: number | null = null;
+  if (parsed.data.contract_id) {
+    const { data: c, error: cErr } = await auth.supabase
+      .from("maintenance_contracts")
+      .select("sla_hours, customer_id, status")
+      .eq("id", parsed.data.contract_id)
+      .maybeSingle();
+    if (cErr) return { ok: false as const, error: pgErrorMessage(cErr) };
+    if (!c) return { ok: false as const, error: "Không tìm thấy hợp đồng" };
+    if (c.customer_id !== parsed.data.customer_id) return { ok: false as const, error: "Hợp đồng không thuộc khách hàng này" };
+    if (c.status !== "active") return { ok: false as const, error: "Hợp đồng không còn hiệu lực" };
+    slaHours = c.sla_hours;
+  }
 
-  const { data, error } = await admin
-    .from("maintenance_tickets")
-    .insert({
-      ...parsed.data,
-      code,
-      status: "received",
-      sla_due_at: slaDueAt,
-    })
-    .select("id")
-    .single();
-
-  if (error) return { ok: false as const, error: error.message };
+  const { data, error } = await insertWithGeneratedCode<{ id: string }>(
+    () => generateCode("TK"),
+    (code) =>
+      auth.supabase
+        .from("maintenance_tickets")
+        .insert({ ...parsed.data, code, status: "received", sla_due_at: slaDueAt(new Date(), slaHours) })
+        .select("id")
+        .single(),
+  );
+  if (error || !data) return { ok: false as const, error: error ? pgErrorMessage(error) : "Không tạo được ticket" };
   revalidatePath("/maintenance/tickets");
   redirect(`/maintenance/tickets/${data.id}`);
-}
-
-async function getContractSla(contractId: string): Promise<number> {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from("maintenance_contracts")
-    .select("sla_hours")
-    .eq("id", contractId)
-    .single();
-  return data?.sla_hours ?? 24;
 }
 
 export async function updateTicketStatusAction(id: string, newStatus: string) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
-  const admin = createAdminClient();
-  const { data: ticket } = await admin
+  const { data: ticket, error: tErr } = await auth.supabase
     .from("maintenance_tickets")
     .select("status")
     .eq("id", id)
-    .single();
-
+    .maybeSingle();
+  if (tErr) return { ok: false as const, error: pgErrorMessage(tErr) };
   if (!ticket) return { ok: false as const, error: "Không tìm thấy ticket" };
 
   const allowed = nextStatuses(ticket.status as TicketStatus) as string[];
@@ -183,8 +141,15 @@ export async function updateTicketStatusAction(id: string, newStatus: string) {
   if (newStatus === "in_progress") updates.started_at = new Date().toISOString();
   if (newStatus === "completed") updates.completed_at = new Date().toISOString();
 
-  const { error } = await admin.from("maintenance_tickets").update(updates).eq("id", id);
-  if (error) return { ok: false as const, error: error.message };
+  // optimistic guard: only move the ticket if it is still in the status we validated against
+  const { data: moved, error } = await auth.supabase
+    .from("maintenance_tickets")
+    .update(updates)
+    .eq("id", id)
+    .eq("status", ticket.status)
+    .select("id");
+  if (error) return { ok: false as const, error: pgErrorMessage(error) };
+  if (!moved || moved.length === 0) return { ok: false as const, error: "Ticket vừa được cập nhật bởi người khác, hãy tải lại trang" };
 
   revalidatePath(`/maintenance/tickets/${id}`);
   revalidatePath("/maintenance/tickets");
@@ -195,43 +160,26 @@ export async function updateTicketStatusAction(id: string, newStatus: string) {
 // MAINTENANCE LOG ACTIONS
 // ============================================================
 
-const LogSchema = z.object({
-  ticket_id: z.string().uuid(),
-  log_type: z.enum(["periodic", "incident", "note"]).default("note"),
-  description: z.string().min(1),
-  work_done: z.string().optional().default(""),
-  parts_used: z.array(z.string()).optional().default([]),
-  performed_by: z.string().min(1),
-});
-
 export async function addMaintenanceLogAction(formData: FormData) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
-  const partsRaw = formData.get("parts_used");
-  const parts = partsRaw
-    ? (partsRaw as string).split(",").map((s) => s.trim()).filter(Boolean)
-    : [];
-
   const parsed = LogSchema.safeParse({
     ticket_id: formData.get("ticket_id"),
     log_type: formData.get("log_type") || "note",
     description: formData.get("description"),
     work_done: formData.get("work_done") || "",
-    parts_used: parts,
-    performed_by: formData.get("performed_by"),
+    parts_used: parseParts(formData.get("parts_used")),
   });
-
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.issues.map((i) => i.message).join(", ") };
   }
-
-  const admin = createAdminClient();
-  const { error } = await admin.from("maintenance_logs").insert({
+  // performed_by is a uuid FK to auth.users: it is the logged-in user (the old form sent free text, which always failed)
+  const { error } = await auth.supabase.from("maintenance_logs").insert({
     ...parsed.data,
+    performed_by: auth.user.id,
     performed_at: new Date().toISOString(),
   });
-
-  if (error) return { ok: false as const, error: error.message };
+  if (error) return { ok: false as const, error: pgErrorMessage(error) };
   revalidatePath(`/maintenance/tickets/${parsed.data.ticket_id}`);
   return { ok: true as const };
 }
