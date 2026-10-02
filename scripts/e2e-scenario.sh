@@ -66,7 +66,22 @@ P -c "select e.entry_no, e.entry_date, e.memo, e.reverses_id is not null as is_r
 chk "tồn kho khôi phục 10 cái / 100.000.000 theo đúng giá vốn" "$(V "select stock_qty=10 and stock_value=100000000 from products where id='$PR'")"
 chk "AR = 0, đối chiếu = 0" "$(V "select public.account_balance('131')=0 and (select bool_and(diff=0) from accounting_reconciliation())")"
 chk "hóa đơn gốc vẫn còn (chỉ gắn dấu hủy), bút toán gốc không bị sửa" "$(V "select voided_at is not null from sales_invoices where id='$INV_ID'")"
-step "8. Kiểm tra cuối"
+step "8. Đường đi của Telegram bot (service_role): nhập kho nhanh, bán nhanh, báo cáo"
+ADJ=$(S "select public.stock_adjust('$PR','in',5,12000000,'manual',null,'Nhập qua Telegram bot')")
+echo "$ADJ"
+chk "stock_adjust: tồn 10 -> 15" "$(V "select stock_qty=15 from products where id='$PR'")"
+BOTINV=$(S "select public.post_sales_invoice('$C','2026-10-04','2026-10-11','[{\"product_id\":\"$PR\",\"qty\":2,\"unit_price\":20000000,\"vat_rate\":0}]'::jsonb,'Bán qua Telegram bot')")
+echo "$BOTINV"
+chk "bán nhanh: tồn 15 -> 13, AR = 40.000.000" "$(V "select (select stock_qty=13 from products where id='$PR') and public.account_balance('131')=40000000")"
+PNL=$(S "select jsonb_agg(to_jsonb(r)) from public.report_monthly_pnl('2026-09-01','2026-10-31') r")
+echo "$PNL"
+chk "báo cáo: T9 doanh thu 45.000.000; T10 = 40.000.000 - 45.000.000 (đảo HĐ T9 ghi vào T10) = -5.000.000" "$(S "select (select revenue=45000000 from public.report_monthly_pnl('2026-09-01','2026-10-31') where month='2026-09-01') and (select revenue=-5000000 from public.report_monthly_pnl('2026-09-01','2026-10-31') where month='2026-10-01')")"
+chk "top sản phẩm T10 (không tính HĐ đã hủy): 2 cái / 40.000.000" "$(S "select qty=2 and revenue=40000000 from public.report_top_products('2026-10-01','2026-10-31',5) where product_id='$PR'")"
+chk "dashboard: công nợ phải thu = 40.000.000" "$(S "select (public.report_dashboard()->>'ar_balance')::numeric=40000000")"
+chk "trước khi hạch toán: /nhap (stock_adjust) làm TK 156 lệch sổ phụ (đúng như thiết kế - cần post_stock_adjustments)" "$(S "select exists (select 1 from public.accounting_reconciliation() where check_name like 'Inventory%' and diff <> 0)")"
+S "select public.post_stock_adjustments('2026-10-04')" >/dev/null
+chk "sau post_stock_adjustments: mọi đối chiếu = 0" "$(S "select bool_and(diff=0) from public.accounting_reconciliation()")"
+step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"
 echo; [ $fail = 0 ] && echo "E2E RESULT: PASS" || echo "E2E RESULT: FAIL"; exit $fail
