@@ -5,8 +5,8 @@ import { cookies } from "next/headers";
  * Server-side Supabase client (RSC / Route Handlers / Server Actions).
  * Reads/writes the user's session via Next.js cookies.
  */
-export function createClient() {
-  const cookieStore = cookies();
+export async function createClient() {
+  const cookieStore = await cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

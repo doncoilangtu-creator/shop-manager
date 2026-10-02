@@ -10,10 +10,8 @@ const bodySchema = z.object({
   signaturePng: z.string().min(20), // base64 PNG
 });
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { token: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const { token } = params;
   const json = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
@@ -25,7 +23,7 @@ export async function POST(
   }
   const { ticketId, signerName, signerRole, signaturePng } = parsed.data;
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Resolve the token (anon-readable per RLS policy).
   const { data: row, error: tokenErr } = await supabase
@@ -128,12 +126,10 @@ export async function POST(
   return NextResponse.json({ ok: true, status: newStatus, bothSigned });
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { token: string } },
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   // Lightweight token info for diagnostics / preflight.
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("signature_tokens")
     .select("ticket_id, expires_at, used_at")

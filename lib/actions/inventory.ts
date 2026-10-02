@@ -172,7 +172,7 @@ export async function stockIn(formData: FormData): Promise<ActionResult<null>> {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
   }
   const supabase = createAdminClient();
-  const supabaseUser = createClient();
+  const supabaseUser = await createClient();
   const {
     data: { user },
   } = await supabaseUser.auth.getUser();

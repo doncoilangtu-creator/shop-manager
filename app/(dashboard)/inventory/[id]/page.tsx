@@ -8,11 +8,12 @@ import { ProductForm } from "../product-form";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
-export default async function EditProductPage({ params }: PageProps) {
-  const supabase = createClient();
+export default async function EditProductPage(props: PageProps) {
+  const params = await props.params;
+  const supabase = await createClient();
 
   const [{ data: product, error }, { data: categories }] = await Promise.all([
     supabase.from("products").select("*").eq("id", params.id).maybeSingle(),

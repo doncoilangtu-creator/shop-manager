@@ -151,7 +151,7 @@ export async function issueSignatureToken(
  * Returns which roles have signed and the latest active token (if any).
  */
 export async function getTicketSignatureState(ticketId: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const [sigs, tokens] = await Promise.all([
     supabase
       .from("signatures")

@@ -19,15 +19,16 @@ import { DeleteSupplierButton } from "./delete-button";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: {
+  searchParams: Promise<{
     q?: string;
-  };
+  }>;
 }
 
 const PAGE_SIZE = 20;
 
-export default async function SuppliersPage({ searchParams }: PageProps) {
-  const supabase = createClient();
+export default async function SuppliersPage(props: PageProps) {
+  const searchParams = await props.searchParams;
+  const supabase = await createClient();
   const q = (searchParams.q ?? "").trim();
 
   let query = supabase

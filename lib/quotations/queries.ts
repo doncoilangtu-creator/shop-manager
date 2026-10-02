@@ -10,7 +10,7 @@ import type {
 export async function listProductsForPicker(): Promise<
   Array<Pick<Product, "id" | "sku" | "name" | "sell_price" | "unit" | "stock_qty">>
 > {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("products")
     .select("id, sku, name, sell_price, unit, stock_qty")
@@ -29,7 +29,7 @@ export async function listProductsForPicker(): Promise<
 export async function listCustomersForPicker(): Promise<
   Array<Pick<Customer, "id" | "name" | "type" | "phone" | "tax_code" | "address">>
 > {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("customers")
     .select("id, name, type, phone, tax_code, address")
@@ -52,7 +52,7 @@ export interface QuotationListFilters {
 
 /** Paginated quotations list, joined with customer name. */
 export async function listQuotations(filters: QuotationListFilters = {}) {
-  const supabase = createClient();
+  const supabase = await createClient();
   let q = supabase
     .from("quotations")
     .select(
@@ -89,7 +89,7 @@ export interface QuotationDetail extends Quotation {
 
 /** Get a single quotation with items + customer (for detail page). */
 export async function getQuotationDetail(id: string): Promise<QuotationDetail | null> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: header, error } = await supabase
     .from("quotations")
     .select(

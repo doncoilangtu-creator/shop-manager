@@ -21,17 +21,18 @@ import { DeleteProductButton } from "./delete-button";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: {
+  searchParams: Promise<{
     q?: string;
     category?: string;
     page?: string;
-  };
+  }>;
 }
 
 const PAGE_SIZE = 20;
 
-export default async function InventoryPage({ searchParams }: PageProps) {
-  const supabase = createClient();
+export default async function InventoryPage(props: PageProps) {
+  const searchParams = await props.searchParams;
+  const supabase = await createClient();
   const q = (searchParams.q ?? "").trim();
   const categoryId = searchParams.category ?? "";
   const page = Math.max(1, parseInt(searchParams.page ?? "1", 10) || 1);

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 export default async function MaintenancePage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const [contracts, openTickets, signedTickets] = await Promise.all([
     supabase
       .from("maintenance_contracts")

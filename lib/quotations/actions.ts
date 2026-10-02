@@ -33,7 +33,7 @@ export async function createQuotationAction(
   }
   const data = parsed.data;
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const totals = computeQuotationTotals({
     items: data.items,
     discount: data.discount,
@@ -106,7 +106,7 @@ export async function updateQuotationAction(
     };
   }
   const data = parsed.data;
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: existing, error: exErr } = await supabase
     .from("quotations")
@@ -181,7 +181,7 @@ export async function updateQuotationAction(
  * Mark a draft quotation as sent (shared with customer).
  */
 export async function sendQuotationAction(id: string): Promise<ActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: row, error } = await supabase
     .from("quotations")
     .update({ status: "sent" })
@@ -201,7 +201,7 @@ export async function sendQuotationAction(id: string): Promise<ActionResult> {
  * Approve a sent quotation (customer accepted).
  */
 export async function approveQuotationAction(id: string): Promise<ActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: row, error } = await supabase
     .from("quotations")
     .update({ status: "approved" })
@@ -224,7 +224,7 @@ export async function approveQuotationAction(id: string): Promise<ActionResult> 
  * Reject a sent quotation (customer declined).
  */
 export async function rejectQuotationAction(id: string): Promise<ActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: row, error } = await supabase
     .from("quotations")
     .update({ status: "rejected" })
@@ -247,7 +247,7 @@ export async function rejectQuotationAction(id: string): Promise<ActionResult> {
  * Delete a quotation. Only allowed when in draft status (or rejected).
  */
 export async function deleteQuotationAction(id: string): Promise<ActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   // Fetch first so we can decide
   const { data: row, error: rErr } = await supabase
     .from("quotations")

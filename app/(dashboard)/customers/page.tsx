@@ -20,17 +20,18 @@ import { DeleteCustomerButton } from "./delete-button";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: {
+  searchParams: Promise<{
     q?: string;
     type?: string;
     tag?: string;
-  };
+  }>;
 }
 
 const PAGE_SIZE = 20;
 
-export default async function CustomersPage({ searchParams }: PageProps) {
-  const supabase = createClient();
+export default async function CustomersPage(props: PageProps) {
+  const searchParams = await props.searchParams;
+  const supabase = await createClient();
   const q = (searchParams.q ?? "").trim();
   const type = searchParams.type ?? "";
   const tag = searchParams.tag ?? "";
