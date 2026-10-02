@@ -1,11 +1,13 @@
 "use server";
 
+import { requireUser, requireUserOrThrow } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateCode } from "@/lib/utils";
+import { isOwnQuotationPdfUrl } from "./pdf-url";
 import {
   quotationFormSchema,
   computeQuotationTotals,
@@ -23,6 +25,8 @@ export async function createQuotationAction(
   raw: QuotationFormInput,
   status: "draft" | "sent" = "draft",
 ): Promise<ActionResult> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = quotationFormSchema.safeParse(raw);
   if (!parsed.success) {
     return {
@@ -97,6 +101,8 @@ export async function updateQuotationAction(
   id: string,
   raw: QuotationFormInput,
 ): Promise<ActionResult> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = quotationFormSchema.safeParse(raw);
   if (!parsed.success) {
     return {
@@ -181,6 +187,8 @@ export async function updateQuotationAction(
  * Mark a draft quotation as sent (shared with customer).
  */
 export async function sendQuotationAction(id: string): Promise<ActionResult> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = await createClient();
   const { data: row, error } = await supabase
     .from("quotations")
@@ -201,6 +209,8 @@ export async function sendQuotationAction(id: string): Promise<ActionResult> {
  * Approve a sent quotation (customer accepted).
  */
 export async function approveQuotationAction(id: string): Promise<ActionResult> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = await createClient();
   const { data: row, error } = await supabase
     .from("quotations")
@@ -224,6 +234,8 @@ export async function approveQuotationAction(id: string): Promise<ActionResult> 
  * Reject a sent quotation (customer declined).
  */
 export async function rejectQuotationAction(id: string): Promise<ActionResult> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = await createClient();
   const { data: row, error } = await supabase
     .from("quotations")
@@ -247,6 +259,8 @@ export async function rejectQuotationAction(id: string): Promise<ActionResult> {
  * Delete a quotation. Only allowed when in draft status (or rejected).
  */
 export async function deleteQuotationAction(id: string): Promise<ActionResult> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = await createClient();
   // Fetch first so we can decide
   const { data: row, error: rErr } = await supabase
@@ -275,6 +289,11 @@ export async function saveQuotationPdfUrlAction(
   id: string,
   pdfUrl: string,
 ): Promise<ActionResult> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
+  if (!isOwnQuotationPdfUrl(pdfUrl)) {
+    return { ok: false, error: "URL PDF không hợp lệ" };
+  }
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("quotations")
@@ -319,6 +338,7 @@ function readItems(formData: FormData) {
 }
 
 export async function createQuotationFormAction(formData: FormData) {
+  await requireUserOrThrow();
   const status = (formData.get("__status") === "sent" ? "sent" : "draft") as
     | "draft"
     | "sent";

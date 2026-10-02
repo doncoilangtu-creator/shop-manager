@@ -1,50 +1,52 @@
 /**
- * Bootstrap the initial admin user. Called once at server startup.
- * Idempotent: if the admin already exists, it does nothing.
+ * Bootstrap the initial admin user. Run ONCE by hand:  npm run bootstrap-admin
+ * (no longer executed on every server cold start).
  *
- * Required env:
- *   - INITIAL_ADMIN_PASSWORD
- *
- * The script is invoked from instrumentation.ts at the Next.js server boot.
+ * Env: INITIAL_ADMIN_PASSWORD (required), INITIAL_ADMIN_EMAIL (default admin@shop.local)
+ * Pure logic, takes the admin client as a parameter so it is unit-testable and
+ * can run outside Next (this file must NOT import `server-only` modules).
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { createAdminClient } from "./admin";
+export const SAMPLE_PASSWORDS = new Set([
+  "ChangeMeToAStrongPassword123!",
+  "changeme",
+  "password",
+  "admin",
+]);
 
-const ADMIN_EMAIL = "admin@shop.local";
+export type BootstrapResult =
+  | { ok: true; status: "created" | "exists"; email: string }
+  | { ok: false; error: string };
 
-export async function bootstrapAdmin(): Promise<void> {
-  const password = process.env.INITIAL_ADMIN_PASSWORD;
-  if (!password) {
-    console.warn(
-      "[bootstrap] INITIAL_ADMIN_PASSWORD not set — skipping admin bootstrap.",
-    );
-    return;
-  }
+export function validateAdminPassword(pw: string | undefined): string | null {
+  if (!pw) return "INITIAL_ADMIN_PASSWORD chưa được đặt";
+  if (SAMPLE_PASSWORDS.has(pw)) return "INITIAL_ADMIN_PASSWORD đang là mật khẩu mẫu — hãy đặt mật khẩu mạnh";
+  if (pw.length < 12) return "INITIAL_ADMIN_PASSWORD phải có ít nhất 12 ký tự";
+  return null;
+}
 
-  const admin = createAdminClient();
+export async function bootstrapAdmin(
+  admin: Pick<SupabaseClient, "auth">,
+  env: { email?: string; password?: string } = {
+    email: process.env.INITIAL_ADMIN_EMAIL,
+    password: process.env.INITIAL_ADMIN_PASSWORD,
+  },
+): Promise<BootstrapResult> {
+  const email = (env.email || "admin@shop.local").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+$/.test(email)) return { ok: false, error: "Email admin không hợp lệ" };
+  const pwErr = validateAdminPassword(env.password);
+  if (pwErr) return { ok: false, error: pwErr };
 
-  // Try to find existing admin by listing users (lightweight; one-user app).
-  const { data: list, error: listErr } = await admin.auth.admin.listUsers({
-    perPage: 200,
-  });
-  if (listErr) {
-    console.error("[bootstrap] listUsers failed:", listErr.message);
-    return;
-  }
-
-  const exists = list?.users?.some((u) => u.email === ADMIN_EMAIL);
-  if (exists) {
-    return; // already provisioned
-  }
-
-  const { error: createErr } = await admin.auth.admin.createUser({
-    email: ADMIN_EMAIL,
-    password,
+  const { error } = await admin.auth.admin.createUser({
+    email,
+    password: env.password!,
     email_confirm: true,
   });
-  if (createErr) {
-    console.error("[bootstrap] createUser failed:", createErr.message);
-    return;
+  if (!error) return { ok: true, status: "created", email };
+  // Idempotent: already registered is fine (no need to list/scan users).
+  if (/already|registered|exists/i.test(error.message) || (error as { code?: string }).code === "email_exists") {
+    return { ok: true, status: "exists", email };
   }
-  console.log(`[bootstrap] ✓ Admin user created: ${ADMIN_EMAIL}`);
+  return { ok: false, error: error.message };
 }

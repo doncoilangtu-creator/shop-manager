@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/client";
+import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,7 +43,7 @@ export function LoginForm() {
       setError(err.message);
       return;
     }
-    const redirectTo = params.get("redirectTo") || "/";
+    const redirectTo = safeRedirectPath(params.get("redirectTo"));
     router.push(redirectTo);
     router.refresh();
   };
