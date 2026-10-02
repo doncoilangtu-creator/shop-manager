@@ -25,9 +25,9 @@ begin
     insert into public.signatures(ticket_id, signer_name, signer_role, signature_png, signed_at, ip_address)
     values (t_nt, 'Backdated', 'customer', 'x', '2000-01-01', '1.2.3.4'); ok4 := true;
   exception when others then null; end;
-  begin  -- (5) control: anon cannot read back (no select policy for anon on signatures)
+  begin  -- (5) control: anon cannot read back (no select policy / no privilege for anon on signatures)
     select count(*) into sig_cnt from public.signatures; can_read := sig_cnt > 0;
-  end;
+  exception when insufficient_privilege then can_read := false; end;
   begin  -- (6) INSERT ... RETURNING needs SELECT policy -> fails for anon (matters for PostgREST return=representation)
     insert into public.signatures(ticket_id, signer_name, signer_role, signature_png)
     values (t_nt, 'Ret', 'customer', 'x') returning id into strict sqlst; can_ret := true;

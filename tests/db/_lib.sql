@@ -30,3 +30,14 @@ create or replace function pg_temp.mk_ticket(cust uuid default null) returns uui
 create or replace function pg_temp.mk_token(tid uuid, exp interval, used boolean default false) returns text language sql as $f$
   insert into public.signature_tokens(ticket_id, token, expires_at, used_at)
   values (tid, 'tok_' || gen_random_uuid(), now() + exp, case when used then now() end) returning token $f$;
+
+-- A shop staff account: auth user (+ app_users row once migration 0003 exists).
+create or replace function pg_temp.mk_staff(p_role text default 'owner') returns uuid language plpgsql as $f$
+declare u uuid := gen_random_uuid();
+begin
+  insert into auth.users(id, email) values (u, 'staff_' || u || '@test.local');
+  if to_regclass('public.app_users') is not null then
+    execute format('insert into public.app_users(user_id, role) values (%L, %L)', u, p_role);
+  end if;
+  return u;
+end $f$;

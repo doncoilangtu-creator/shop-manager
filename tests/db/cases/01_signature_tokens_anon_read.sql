@@ -11,11 +11,13 @@ begin
   tok_used := pg_temp.mk_token(t, interval '7 days', true);
   perform pg_temp.mk_token(other_t, interval '7 days');
   perform pg_temp.act_as('anon');
-  select count(*) into n_all from public.signature_tokens;                      -- no WHERE: enumerate everything
-  select count(*) into n_other from public.signature_tokens where ticket_id = other_t;
-  select exists(select 1 from public.signature_tokens where token = tok_ok)   into seen_ok;
-  select exists(select 1 from public.signature_tokens where token = tok_exp)  into seen_exp;
-  select exists(select 1 from public.signature_tokens where token = tok_used) into seen_used;
+  begin  -- "permission denied" counts as 0 rows visible (that is the fixed behaviour)
+    select count(*) into n_all from public.signature_tokens;                      -- no WHERE: enumerate everything
+    select count(*) into n_other from public.signature_tokens where ticket_id = other_t;
+    select exists(select 1 from public.signature_tokens where token = tok_ok)   into seen_ok;
+    select exists(select 1 from public.signature_tokens where token = tok_exp)  into seen_exp;
+    select exists(select 1 from public.signature_tokens where token = tok_used) into seen_used;
+  exception when insufficient_privilege then n_all := 0; n_other := 0; seen_ok := false; seen_exp := false; seen_used := false; end;
   reset role;
   perform pg_temp.rec('F3a', 'weakness', case when seen_ok and n_all >= 2 then 'CONFIRMED' else 'NOT_REPRODUCIBLE' end,
     format('anon SELECT with no filter returned %s token rows (incl. tokens of another ticket: %s); valid token visible=%s',

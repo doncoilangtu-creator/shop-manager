@@ -10,8 +10,10 @@ begin
   insert into public.notifications(type) values ('x');
   perform pg_temp.act_as('anon');
   for t in select tablename from pg_tables where schemaname = 'public' and tablename <> 'signature_tokens' and tablename <> 'signatures' loop
-    execute format('select count(*) from public.%I', t) into n;
-    if n > 0 then leaked := leaked || t; end if;
+    begin
+      execute format('select count(*) from public.%I', t) into n;
+      if n > 0 then leaked := leaked || t; end if;
+    exception when insufficient_privilege then null; end;   -- no privilege at all = nothing leaked
   end loop;
   for r in select * from (values
       ('customers',     'insert into public.customers(name) values (''x'')'),
@@ -36,7 +38,7 @@ begin
   reset role;
   perform pg_temp.rec('SVC-bypass-ctl', 'control', case when cnt > 0 then 'OK' else 'FAIL' end, 'service_role reads RLS-protected table (BYPASSRLS), as the admin client does');
   -- policies actually present for anon
-  perform pg_temp.rec('ANON-policies', 'info', 'INFO', 'anon policies: ' || (select string_agg(tablename || '.' || policyname || '[' || cmd || ']', ', ') from pg_policies where 'anon' = any(roles)));
+  perform pg_temp.rec('ANON-policies', 'info', 'INFO', 'anon policies: ' || coalesce((select string_agg(tablename || '.' || policyname || '[' || cmd || ']', ', ') from pg_policies where 'anon' = any(roles)), 'none'));
 end $$;
 select current_setting('harness.out');
 rollback;

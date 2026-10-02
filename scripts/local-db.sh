@@ -60,7 +60,9 @@ build_db() {
   log "applying compat layer"
   psql_db -1 -f "$ROOT/scripts/local-db/compat.sql"
   local f
+  # SHOP_MIGRATE_UPTO=0002 builds the pre-C2 baseline (used to prove the tests really detect the old weaknesses)
   for f in $(ls "$ROOT"/supabase/migrations/*.sql | sort); do
+    if [ -n "${SHOP_MIGRATE_UPTO:-}" ] && [[ "$(basename "$f")" > "${SHOP_MIGRATE_UPTO}_zzz" ]]; then continue; fi
     log "migration $(basename "$f")"
     psql_db -1 -f "$f"
   done
