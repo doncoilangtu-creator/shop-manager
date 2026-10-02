@@ -17,6 +17,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { parseSignError, signWithToken, getTokenInfo, SIGN_ERROR_HTTP } from "@/lib/signing";
 import { POST, GET } from "@/app/api/sign/[token]/route";
+import { resetSignThrottle } from "@/lib/sign-throttle";
 
 const TOKEN = "abcdefghijklmnop1234567890";
 const TICKET = "11111111-1111-4111-8111-111111111111";
@@ -31,7 +32,7 @@ const post = (b: unknown, headers: Record<string, string> = {}) =>
     { params: Promise.resolve({ token: TOKEN }) },
   );
 
-beforeEach(() => { rpc.mockReset(); maybeSingle.mockReset(); createAdminClient.mockClear(); });
+beforeEach(() => { rpc.mockReset(); maybeSingle.mockReset(); createAdminClient.mockClear(); resetSignThrottle(); });
 
 describe("parseSignError", () => {
   it.each(["token_used", "token_expired", "already_signed", "ticket_not_signable", "signature_too_large"])("maps %s", (k) => {
@@ -98,5 +99,22 @@ describe("GET /api/sign/[token]", () => {
     maybeSingle.mockResolvedValue({ data: { id: "i", ticket_id: TICKET, expires_at: "2030-01-01", used_at: null, maintenance_tickets: { id: TICKET, code: "TK-1", title: "secret", description: "d", customers: { name: "N" } } }, error: null });
     const res = await GET(new NextRequest("http://x/api/sign/" + TOKEN), { params: Promise.resolve({ token: TOKEN }) });
     expect(await res.json()).toEqual({ ticketId: TICKET, expiresAt: "2030-01-01", usedAt: null });
+  });
+});
+
+describe("throttling of the public endpoint", () => {
+  it("returns 429 + Retry-After after 10 POSTs/min for the same token, before touching the DB", async () => {
+    const mk = () => new NextRequest("http://x/api/sign/tok", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "7.7.7.7" }, body: "{}" });
+    let last: Response | null = null;
+    for (let i = 0; i < 11; i++) last = await POST(mk(), { params: Promise.resolve({ token: "tok" }) });
+    expect(last!.status).toBe(429);
+    expect(last!.headers.get("Retry-After")).toBeTruthy();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it("a different token from another IP is not affected", async () => {
+    const mk = (ip: string) => new NextRequest("http://x/api/sign/t2", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": ip }, body: "{}" });
+    for (let i = 0; i < 11; i++) await POST(mk("7.7.7.7"), { params: Promise.resolve({ token: "t1" }) });
+    const r = await POST(mk("8.8.8.8"), { params: Promise.resolve({ token: "t2" }) });
+    expect(r.status).toBe(400);   // reaches body validation
   });
 });
