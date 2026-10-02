@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { sanitizeSearchTerm } from "@/lib/search";
 import type {
   Customer,
   Product,
@@ -16,10 +17,7 @@ export async function listProductsForPicker(): Promise<
     .select("id, sku, name, sell_price, unit, stock_qty")
     .order("name", { ascending: true })
     .limit(500);
-  if (error) {
-    console.error("listProductsForPicker error:", error);
-    return [];
-  }
+  if (error) throw new Error("products: " + error.message);
   return (data ?? []) as Array<
     Pick<Product, "id" | "sku" | "name" | "sell_price" | "unit" | "stock_qty">
   >;
@@ -35,10 +33,7 @@ export async function listCustomersForPicker(): Promise<
     .select("id, name, type, phone, tax_code, address")
     .order("name", { ascending: true })
     .limit(500);
-  if (error) {
-    console.error("listCustomersForPicker error:", error);
-    return [];
-  }
+  if (error) throw new Error("customers: " + error.message);
   return (data ?? []) as Array<
     Pick<Customer, "id" | "name" | "type" | "phone" | "tax_code" | "address">
   >;
@@ -65,18 +60,12 @@ export async function listQuotations(filters: QuotationListFilters = {}) {
   if (filters.status) q = q.eq("status", filters.status);
   if (filters.customer_id) q = q.eq("customer_id", filters.customer_id);
   if (filters.search) {
-    const s = filters.search.trim();
-    if (s.length > 0) {
-      // ilike on code; the customer filter is handled separately when needed.
-      q = q.ilike("code", `%${s}%`);
-    }
+    const s = sanitizeSearchTerm(filters.search);
+    if (s.length > 0) q = q.ilike("code", `%${s}%`);
   }
 
   const { data, error, count } = await q;
-  if (error) {
-    console.error("listQuotations error:", error);
-    return { rows: [] as Quotation[], count: 0 };
-  }
+  if (error) throw new Error("quotations: " + error.message);
   return { rows: (data ?? []) as unknown as Quotation[], count: count ?? 0 };
 }
 
@@ -97,18 +86,16 @@ export async function getQuotationDetail(id: string): Promise<QuotationDetail | 
     )
     .eq("id", id)
     .maybeSingle();
-  if (error || !header) return null;
+  if (error) throw new Error("quotation: " + error.message);
+  if (!header) return null;
 
   const { data: items, error: iErr } = await supabase
     .from("quotation_items")
     .select("id, quotation_id, product_id, qty, unit_price, discount, line_total, notes, product:products(id, name, sku, unit)")
     .eq("quotation_id", id)
-    .order("created_at", { ascending: true, referencedTable: undefined });
+    .order("id", { ascending: true });
 
-  if (iErr) {
-    console.error("getQuotationDetail items error:", iErr);
-    return null;
-  }
+  if (iErr) throw new Error("quotation_items: " + iErr.message);
 
   return {
     ...(header as unknown as Quotation),

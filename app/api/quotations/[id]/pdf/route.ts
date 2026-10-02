@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth/require-user";
 import { QuotationPdfDocument } from "@/lib/quotations/pdf-template";
 import { uploadQuotationPdf } from "@/lib/quotations/storage";
-import { saveQuotationPdfUrlAction } from "@/lib/quotations/actions";
+import { saveQuotationPdfPathAction } from "@/lib/quotations/actions";
+import { signQuotationPdf } from "@/lib/quotations/storage";
+import { getShopInfo } from "@/lib/shop";
 import type { Quotation, QuotationItem } from "@/types/db";
 
 // @react-pdf/renderer must run on Node runtime (uses Buffer / stream).
@@ -100,13 +102,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const React = await import("react");
 
   const doc = React.createElement(QuotationPdfDocument, {
-    shop: {
-      name: process.env.SHOP_NAME || "Shop Manager",
-      taxCode: process.env.SHOP_TAX_CODE || undefined,
-      address: process.env.SHOP_ADDRESS || undefined,
-      phone: process.env.SHOP_PHONE || undefined,
-      email: process.env.SHOP_EMAIL || undefined,
-    },
+    shop: getShopInfo(),
     quotation: {
       code: detail.code,
       createdAt: detail.created_at,
@@ -167,18 +163,13 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     });
   }
 
-  // Otherwise, persist to Storage and return the URL.
+  // Otherwise, persist to the private bucket and return a short-lived signed link.
   try {
-    const { url: storedUrl } = await uploadQuotationPdf({
-      code: detail.code,
-      pdf: pdfBuffer,
-    });
-    await saveQuotationPdfUrlAction(detail.id, storedUrl);
-    return NextResponse.json({
-      ok: true,
-      url: storedUrl,
-      code: detail.code,
-    });
+    const { path } = await uploadQuotationPdf({ code: detail.code, pdf: pdfBuffer });
+    const saved = await saveQuotationPdfPathAction(detail.id, path);
+    if (!saved.ok) throw new Error(saved.error);
+    const link = await signQuotationPdf(path);
+    return NextResponse.json({ ok: true, url: link, code: detail.code, expiresInSeconds: 3600 });
   } catch (e) {
     // Don't fail the user — fall back to streaming the PDF inline.
     console.error("Storage upload failed:", e);

@@ -26,7 +26,7 @@ const MODULES = {
   maintenance: () => import("@/app/(dashboard)/maintenance/actions"),
   quotations: () => import("@/lib/quotations/actions"),
 };
-const EXPECTED_ACTIONS = { customers: 3, inventory: 5, suppliers: 5, maintenance: 7, quotations: 8 };
+const EXPECTED_ACTIONS = { customers: 3, inventory: 5, suppliers: 5, maintenance: 7, quotations: 10 };
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const fd = () => new FormData();
@@ -79,17 +79,12 @@ describe("authenticated callers pass the guard", () => {
     expect((r as { error: string }).error).not.toBe("Unauthorized");
   });
 
-  it("saveQuotationPdfUrlAction rejects URLs outside our storage bucket", async () => {
+  it("saveQuotationPdfPathAction rejects anything that is not one of our generated object paths", async () => {
     getUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
-    const { saveQuotationPdfUrlAction } = await MODULES.quotations();
-    for (const bad of [
-      "https://evil.example/storage/v1/object/public/quotations/a.pdf",
-      "https://dummy.supabase.co/storage/v1/object/public/other/a.pdf",
-      "javascript:alert(1)",
-      "https://dummy.supabase.co@evil.example/storage/v1/object/public/quotations/a.pdf",
-    ]) {
-      const r = await saveQuotationPdfUrlAction(UUID, bad);
-      expect(r, bad).toEqual({ ok: false, error: "URL PDF không hợp lệ" });
+    const { saveQuotationPdfPathAction } = await MODULES.quotations();
+    for (const bad of ["../a-1790000000000.pdf", "https://evil.example/a.pdf", "javascript:alert(1)", "a.html", ""]) {
+      const r = await saveQuotationPdfPathAction(UUID, bad);
+      expect(r, bad).toEqual({ ok: false, error: "Đường dẫn PDF không hợp lệ" });
     }
     expect(createAdminClient).not.toHaveBeenCalled();
   });

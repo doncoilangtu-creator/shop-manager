@@ -1,21 +1,9 @@
 /**
- * A quotation `pdf_url` may only point at OUR Supabase Storage `quotations`
- * bucket (public or signed object URL) — never an arbitrary external URL.
+ * Quotation PDFs live in the PRIVATE `quotations` bucket and are addressed by object path only
+ * ({CODE}-{timestamp}.pdf). Links are signed on demand; nothing public is stored.
  */
-export function isOwnQuotationPdfUrl(
-  url: string,
-  supabaseUrl: string | undefined = process.env.NEXT_PUBLIC_SUPABASE_URL,
-): boolean {
-  if (!supabaseUrl) return false;
-  let u: URL;
-  let base: URL;
-  try {
-    u = new URL(url);
-    base = new URL(supabaseUrl);
-  } catch {
-    return false;
-  }
-  if (u.protocol !== base.protocol || u.host !== base.host) return false;
-  if (u.username || u.password) return false;
-  return /^\/storage\/v1\/object\/(public|sign)\/quotations\/[^/?#]+\.pdf$/.test(u.pathname);
+export const QUOTATION_PDF_PATH_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,80}-\d{10,16}\.pdf$/;
+
+export function isQuotationPdfPath(path: string): boolean {
+  return QUOTATION_PDF_PATH_RE.test(path);
 }

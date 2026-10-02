@@ -45,7 +45,6 @@ describe("internal links resolve", () => {
   // Pages that do not exist YET and are scheduled for a later cluster. Remove entries as clusters land;
   // the second test fails when an entry has become valid, so this list can only shrink.
   const KNOWN_MISSING = new Set<string>([
-    "/quotations/$",                 // C6
     "/maintenance/tickets", "/maintenance/tickets/$", "/maintenance/tickets/new",   // C7
     "/maintenance/contracts", "/maintenance/contracts/new", "/maintenance/reports", // C7
   ]);

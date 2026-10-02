@@ -78,3 +78,17 @@ export function computeQuotationTotals(input: {
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+/** Items sent to save_quotation(): blank rows dropped, per-line notes kept with THEIR line (by index). */
+export function toRpcItems(items: QuotationFormInput["items"]) {
+  return items
+    .filter((i) => i.product_id && i.qty > 0)
+    .map((i) => ({
+      product_id: i.product_id,
+      qty: i.qty,
+      unit_price: i.unit_price,
+      discount: i.discount || 0,
+      notes: i.notes?.trim() ? i.notes.trim() : null,
+    }));
+}
+

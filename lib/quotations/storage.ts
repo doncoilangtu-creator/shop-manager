@@ -1,61 +1,41 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const BUCKET = "quotations";
+export const PDF_LINK_TTL_SECONDS = 60 * 60; // 1 hour; links are generated per request
 
-/**
- * Upload a PDF Buffer to the `quotations` bucket and return a public URL.
- * Path: quotations/{code}-{timestamp}.pdf
- *
- * Bucket is created on first call (idempotent).
- */
-export async function uploadQuotationPdf(opts: {
-  code: string;
-  pdf: Uint8Array;
-}): Promise<{ url: string; path: string }> {
+/** Upload a rendered PDF to the PRIVATE bucket and return its object path (never a public URL). */
+export async function uploadQuotationPdf(opts: { code: string; pdf: Uint8Array }): Promise<{ path: string }> {
   const admin = createAdminClient();
-
-  // Ensure bucket exists (private — we return signed/public URL based on bucket config).
-  await ensureBucket(admin);
-
-  const fileName = `${opts.code}-${Date.now()}.pdf`;
-  const path = `${fileName}`;
-
-  const { error } = await admin.storage
-    .from(BUCKET)
-    .upload(path, opts.pdf, {
-      contentType: "application/pdf",
-      cacheControl: "3600",
-      upsert: true,
-    });
-
-  if (error) {
-    throw new Error("Upload PDF thất bại: " + error.message);
-  }
-
-  // Try public URL first; if bucket is private, fall back to a 7-day signed URL.
-  const { data: pub } = admin.storage.from(BUCKET).getPublicUrl(path);
-  if (pub?.publicUrl) {
-    return { url: pub.publicUrl, path };
-  }
-  const { data: signed, error: sErr } = await admin.storage
-    .from(BUCKET)
-    .createSignedUrl(path, 60 * 60 * 24 * 7);
-  if (sErr || !signed?.signedUrl) {
-    throw new Error("Không tạo được URL PDF");
-  }
-  return { url: signed.signedUrl, path };
+  await ensurePrivateBucket(admin);
+  const path = `${opts.code}-${Date.now()}.pdf`;
+  const { error } = await admin.storage.from(BUCKET).upload(path, opts.pdf, {
+    contentType: "application/pdf",
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (error) throw new Error("Upload PDF thất bại: " + error.message);
+  return { path };
 }
 
-async function ensureBucket(admin: ReturnType<typeof createAdminClient>) {
-  const { data, error } = await admin.storage.getBucket(BUCKET);
-  if (error || !data) {
-    const { error: cErr } = await admin.storage.createBucket(BUCKET, {
-      public: true,
-      fileSizeLimit: 10 * 1024 * 1024, // 10 MB
+/** Short-lived signed link for an object path. */
+export async function signQuotationPdf(path: string, ttl = PDF_LINK_TTL_SECONDS): Promise<string> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, ttl);
+  if (error || !data?.signedUrl) throw new Error("Không tạo được liên kết PDF");
+  return data.signedUrl;
+}
+
+async function ensurePrivateBucket(admin: ReturnType<typeof createAdminClient>) {
+  const { data } = await admin.storage.getBucket(BUCKET);
+  if (!data) {
+    const { error } = await admin.storage.createBucket(BUCKET, {
+      public: false,
+      fileSizeLimit: 10 * 1024 * 1024,
       allowedMimeTypes: ["application/pdf"],
     });
-    if (cErr && !/already exists/i.test(cErr.message)) {
-      console.warn("Could not create bucket:", cErr.message);
-    }
+    if (error && !/already exists/i.test(error.message)) throw new Error("Không tạo được bucket: " + error.message);
+  } else if (data.public) {
+    // a bucket created by an older version of this app was public: lock it down
+    await admin.storage.updateBucket(BUCKET, { public: false });
   }
 }

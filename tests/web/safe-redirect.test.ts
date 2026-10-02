@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { safeRedirectPath } from "@/lib/auth/safe-redirect";
-import { isOwnQuotationPdfUrl } from "@/lib/quotations/pdf-url";
+import { isQuotationPdfPath } from "@/lib/quotations/pdf-url";
 
 describe("safeRedirectPath", () => {
   it.each(["/", "/customers", "/inventory?filter=low", "/maintenance/tickets/abc#x"])("keeps %s", (p) => {
@@ -18,17 +18,12 @@ describe("safeRedirectPath", () => {
   });
 });
 
-describe("isOwnQuotationPdfUrl", () => {
-  const base = "https://abc.supabase.co";
-  it("accepts public + signed object urls of the quotations bucket", () => {
-    expect(isOwnQuotationPdfUrl(`${base}/storage/v1/object/public/quotations/BG-1.pdf`, base)).toBe(true);
-    expect(isOwnQuotationPdfUrl(`${base}/storage/v1/object/sign/quotations/BG-1.pdf?token=x`, base)).toBe(true);
+describe("isQuotationPdfPath (private bucket object paths)", () => {
+  it("accepts generated names", () => {
+    expect(isQuotationPdfPath("BG-20261003-AB12CD34-1790000000000.pdf")).toBe(true);
   });
-  it("rejects others", () => {
-    expect(isOwnQuotationPdfUrl("https://evil.com/storage/v1/object/public/quotations/a.pdf", base)).toBe(false);
-    expect(isOwnQuotationPdfUrl(`${base}/storage/v1/object/public/quotations/../x.pdf`, base)).toBe(false);
-    expect(isOwnQuotationPdfUrl(`${base}/storage/v1/object/public/quotations/a.html`, base)).toBe(false);
-    expect(isOwnQuotationPdfUrl("not a url", base)).toBe(false);
-    expect(isOwnQuotationPdfUrl(`${base}/x.pdf`, undefined)).toBe(false);
+  it.each(["../x-1790000000000.pdf", "a/b-1790000000000.pdf", "BG-1.pdf", "x-1790000000000.html",
+    "https://evil.com/a-1790000000000.pdf", "", "-1790000000000.pdf"])("rejects %j", (p) => {
+    expect(isQuotationPdfPath(p)).toBe(false);
   });
 });
