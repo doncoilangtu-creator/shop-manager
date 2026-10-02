@@ -25,6 +25,8 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { formatVND, formatDate } from "@/lib/utils";
 import { CustomerForm } from "../customer-form";
+import { OpenItemsCard } from "../../open-items-card";
+import { unwrap } from "@/lib/actions/_shared";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +61,8 @@ export default async function CustomerDetailPage(props: PageProps) {
     { data: quotations },
     { data: tickets },
     { data: debts },
+    arRes,
+    openRes,
   ] = await Promise.all([
     supabase.from("customers").select("*").eq("id", params.id).maybeSingle(),
     supabase
@@ -79,7 +83,20 @@ export default async function CustomerDetailPage(props: PageProps) {
       .eq("customer_id", params.id)
       .order("created_at", { ascending: false })
       .limit(50),
+    supabase.from("v_ar_by_customer").select("balance, gl_balance").eq("customer_id", params.id).maybeSingle(),
+    supabase
+      .from("v_sales_invoice_open")
+      .select("invoice_id, invoice_no, invoice_date, due_date, total, outstanding")
+      .eq("customer_id", params.id)
+      .gt("outstanding", 0)
+      .order("invoice_date", { ascending: true })
+      .limit(100),
   ]);
+  if (arRes.error) throw new Error("v_ar_by_customer: " + arRes.error.message);
+  const ar = arRes.data;
+  const openInvoices = unwrap(openRes, "v_sales_invoice_open") as Array<{
+    invoice_id: string; invoice_no: string; invoice_date: string; due_date: string | null; total: number; outstanding: number;
+  }>;
 
   if (error || !customer) {
     notFound();
@@ -193,9 +210,20 @@ export default async function CustomerDetailPage(props: PageProps) {
         </CardContent>
       </Card>
 
+      <OpenItemsCard
+        kind="receipt"
+        partnerId={customer.id}
+        balance={Number(ar?.balance ?? 0)}
+        glBalance={ar ? Number(ar.gl_balance) : 0}
+        items={openInvoices.map((i) => ({
+          id: i.invoice_id, no: i.invoice_no, date: i.invoice_date, due: i.due_date,
+          total: Number(i.total), outstanding: Number(i.outstanding),
+        }))}
+      />
+
       <Card>
         <CardHeader>
-          <CardTitle>Công nợ hiện tại</CardTitle>
+          <CardTitle>Công nợ ghi tay (cũ)</CardTitle>
           <CardDescription>
             Tổng nợ chưa thanh toán:{" "}
             <span className={totalDebt > 0 ? "font-semibold text-destructive" : "font-medium"}>
@@ -307,7 +335,7 @@ export default async function CustomerDetailPage(props: PageProps) {
                   {tickets.map((t) => (
                     <TableRow key={t.id}>
                       <TableCell>
-                        <Link href={`/maintenance/${t.id}`} className="font-mono text-xs hover:underline">
+                        <Link href={`/maintenance/tickets/${t.id}`} className="font-mono text-xs hover:underline">
                           {t.code}
                         </Link>
                       </TableCell>

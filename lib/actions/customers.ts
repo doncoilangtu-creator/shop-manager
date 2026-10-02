@@ -3,7 +3,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { formDataToObject, type ActionResult } from "@/lib/actions/_shared";
+import { formDataToObject, pgErrorMessage, type ActionResult } from "@/lib/actions/_shared";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const customerSchema = z.object({
@@ -102,27 +102,27 @@ export async function deleteCustomer(id: string): Promise<ActionResult<null>> {
   if (!auth.ok) return auth;
   const supabase = createAdminClient();
 
-  // Check references
-  const [{ data: quotes }, { data: tickets }] = await Promise.all([
+  // Anything that references the customer blocks deletion (the DB also enforces RESTRICT, migration 0003/0006).
+  const checks = await Promise.all([
     supabase.from("quotations").select("id").eq("customer_id", id).limit(1),
     supabase.from("maintenance_tickets").select("id").eq("customer_id", id).limit(1),
+    supabase.from("maintenance_contracts").select("id").eq("customer_id", id).limit(1),
+    supabase.from("customer_debts").select("id").eq("customer_id", id).limit(1),
+    supabase.from("sales_invoices").select("id").eq("customer_id", id).limit(1),
+    supabase.from("payments").select("id").eq("customer_id", id).limit(1),
   ]);
-
-  if (quotes && quotes.length > 0) {
-    return {
-      ok: false,
-      error: "Không thể xóa: khách hàng đang có báo giá liên quan.",
-    };
-  }
-  if (tickets && tickets.length > 0) {
-    return {
-      ok: false,
-      error: "Không thể xóa: khách hàng đang có ticket bảo trì liên quan.",
-    };
+  const failed = checks.find((r) => r.error);
+  if (failed?.error) return { ok: false, error: pgErrorMessage(failed.error) };
+  const reasons = [
+    "báo giá", "ticket bảo trì", "hợp đồng bảo trì", "công nợ", "hóa đơn bán hàng", "phiếu thu",
+  ];
+  const hit = checks.findIndex((r) => (r.data?.length ?? 0) > 0);
+  if (hit >= 0) {
+    return { ok: false, error: `Không thể xóa: khách hàng đang có ${reasons[hit]} liên quan.` };
   }
 
   const { error } = await supabase.from("customers").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: pgErrorMessage(error) };
   revalidatePath("/customers");
   return { ok: true, data: null };
 }
