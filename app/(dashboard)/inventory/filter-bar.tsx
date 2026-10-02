@@ -22,9 +22,10 @@ interface Props {
   categories: Category[];
   currentQ: string;
   currentCategory: string;
+  lowOnly?: boolean;
 }
 
-export function InventoryFilterBar({ categories, currentQ, currentCategory }: Props) {
+export function InventoryFilterBar({ categories, currentQ, currentCategory, lowOnly = false }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [q, setQ] = useState(currentQ);
@@ -98,6 +99,13 @@ export function InventoryFilterBar({ categories, currentQ, currentCategory }: Pr
           </SelectContent>
         </Select>
       </div>
+      <Button
+        type="button"
+        variant={lowOnly ? "default" : "outline"}
+        onClick={() => update({ filter: lowOnly ? null : "low" })}
+      >
+        Sắp hết hàng
+      </Button>
     </div>
   );
 }

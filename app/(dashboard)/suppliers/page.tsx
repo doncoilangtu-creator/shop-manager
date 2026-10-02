@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
 import { formatVND } from "@/lib/utils";
+import { ilikeOr } from "@/lib/search";
 import { SuppliersFilterBar } from "./filter-bar";
 import { DeleteSupplierButton } from "./delete-button";
 
@@ -38,8 +39,8 @@ export default async function SuppliersPage(props: PageProps) {
     .range(0, PAGE_SIZE - 1);
 
   if (q) {
-    const esc = q.replace(/[%,()]/g, "");
-    query = query.or(`name.ilike.%${esc}%,tax_code.ilike.%${esc}%,phone.ilike.%${esc}%`);
+    const orFilter = ilikeOr(["name", "tax_code", "phone"], q);
+    if (orFilter) query = query.or(orFilter);
   }
 
   const [{ data: suppliers, count, error }, { data: debtRows }] = await Promise.all([

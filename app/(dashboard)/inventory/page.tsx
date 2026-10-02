@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
 import { formatVND } from "@/lib/utils";
+import { ilikeOr } from "@/lib/search";
 import { InventoryFilterBar } from "./filter-bar";
 import { StockInDialog } from "./stock-in-dialog";
 import { DeleteProductButton } from "./delete-button";
@@ -24,6 +25,7 @@ interface PageProps {
   searchParams: Promise<{
     q?: string;
     category?: string;
+    filter?: string;
     page?: string;
   }>;
 }
@@ -39,26 +41,27 @@ export default async function InventoryPage(props: PageProps) {
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
+  const lowOnly = searchParams.filter === "low";
+  const SELECT = "id, sku, name, stock_qty, min_stock, sell_price, location, category_id, categories(id, name)";
+  // low stock = stock_qty <= min_stock is a column-vs-column comparison that PostgREST filters cannot
+  // express, so it goes through the low_stock_products view (migration 0003).
   let query = supabase
-    .from("products")
-    .select("id, sku, name, stock_qty, min_stock, sell_price, location, categories(id, name)", {
-      count: "exact",
-    })
+    .from(lowOnly ? "low_stock_products" : "products")
+    .select(SELECT, { count: "exact" })
     .order("name", { ascending: true })
     .range(from, to);
 
-  if (q) {
-    const esc = q.replace(/[%,()]/g, "");
-    query = query.or(`name.ilike.%${esc}%,sku.ilike.%${esc}%`);
-  }
-  if (categoryId) {
-    query = query.eq("category_id", categoryId);
-  }
+  const orFilter = ilikeOr(["name", "sku"], q);
+  if (orFilter) query = query.or(orFilter);
+  if (categoryId) query = query.eq("category_id", categoryId);
 
-  const [{ data: products, count, error }, { data: categories }] = await Promise.all([
+  const [{ data: products, count, error }, { data: categories }, quickRes] = await Promise.all([
     query,
     supabase.from("categories").select("id, name").order("name"),
+    // the quick stock-in dialog needs ALL products, not only the current page
+    supabase.from("products").select("id, sku, name, stock_qty").order("name").limit(2000),
   ]);
+  const quickProducts = quickRes.data ?? [];
 
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -73,7 +76,7 @@ export default async function InventoryPage(props: PageProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <StockInDialog products={products ?? []} />
+          <StockInDialog products={quickProducts} />
           <Button asChild>
             <Link href="/inventory/new">
               <Plus className="mr-2 h-4 w-4" />
@@ -88,6 +91,7 @@ export default async function InventoryPage(props: PageProps) {
           categories={categories ?? []}
           currentQ={q}
           currentCategory={categoryId}
+          lowOnly={lowOnly}
         />
       </Card>
 
@@ -135,8 +139,8 @@ export default async function InventoryPage(props: PageProps) {
             ) : (
               products.map((p) => {
                 const lowStock = (p.stock_qty ?? 0) <= (p.min_stock ?? 0);
-                const cats = (p as unknown as { categories?: { id: string; name: string }[] | null }).categories;
-                const cat = cats?.[0] ?? null;
+                const rel = (p as unknown as { categories?: { id: string; name: string } | { id: string; name: string }[] | null }).categories;
+                const cat = Array.isArray(rel) ? rel[0] ?? null : rel ?? null;
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="font-mono text-xs">{p.sku}</TableCell>
