@@ -136,10 +136,11 @@ create table if not exists public.stock_movement_postings (
 create or replace function public.trg_doc_immutable()
 returns trigger language plpgsql as $$
 begin
-  if tg_op = 'UPDATE' and tg_table_name in ('sales_invoices','purchase_bills','payments')
-     and old.voided_at is null and new.voided_at is not null and new.void_entry_id is not null
-     and (to_jsonb(new) - 'voided_at' - 'void_entry_id') = (to_jsonb(old) - 'voided_at' - 'void_entry_id') then
-    return new;                                   -- the ONLY allowed change: void marker set by reverse_*()
+  if tg_op = 'UPDATE' and tg_table_name in ('sales_invoices','purchase_bills','payments') then
+    if old.voided_at is null and new.voided_at is not null and new.void_entry_id is not null
+       and (to_jsonb(new) - 'voided_at' - 'void_entry_id') = (to_jsonb(old) - 'voided_at' - 'void_entry_id') then
+      return new;                                 -- the ONLY allowed change: void marker set by reverse_*()
+    end if;
   end if;
   raise exception 'accounting documents are immutable: % on % (use the reverse_* function)', tg_op, tg_table_name using errcode = '42501';
 end $$;
@@ -276,12 +277,12 @@ begin
 
   insert into public.sales_invoices(id, invoice_no, customer_id, invoice_date, due_date, subtotal, vat_amount, total, cogs_total, quotation_id, memo, entry_id, created_by)
   values (v_id, v_no, p_customer_id, p_invoice_date, v_due, v_sub, v_vat_t, v_total, v_cogs, p_quotation_id, p_memo, v_entry, auth.uid());
-  for rec in select * from jsonb_array_elements(v_lines) x loop
+  for l in select * from jsonb_array_elements(v_lines) loop
     insert into public.sales_invoice_lines(invoice_id, line_no, product_id, description, qty, unit_price, discount_pct, vat_rate, line_net, vat_amount, unit_cost, line_cogs, movement_id)
-    values (v_id, (rec.x->>'line_no')::int, nullif(rec.x->>'product_id','')::uuid, rec.x->>'description', (rec.x->>'qty')::int,
-            (rec.x->>'unit_price')::numeric, (rec.x->>'discount_pct')::numeric, (rec.x->>'vat_rate')::numeric,
-            (rec.x->>'line_net')::numeric, (rec.x->>'vat_amount')::numeric, (rec.x->>'unit_cost')::numeric, (rec.x->>'line_cogs')::numeric,
-            nullif(rec.x->>'movement_id','')::uuid);
+    values (v_id, (l->>'line_no')::int, nullif(l->>'product_id','')::uuid, l->>'description', (l->>'qty')::int,
+            (l->>'unit_price')::numeric, (l->>'discount_pct')::numeric, (l->>'vat_rate')::numeric,
+            (l->>'line_net')::numeric, (l->>'vat_amount')::numeric, (l->>'unit_cost')::numeric, (l->>'line_cogs')::numeric,
+            nullif(l->>'movement_id','')::uuid);
   end loop;
   return jsonb_build_object('invoice_id', v_id, 'invoice_no', v_no, 'subtotal', v_sub, 'vat', v_vat_t, 'total', v_total, 'cogs', v_cogs, 'entry_id', v_entry);
 end $$;
@@ -347,10 +348,10 @@ begin
   v_entry := public.post_journal(p_bill_date, 'Mua hàng ' || v_no, v_je, 'purchase_bill', v_id);
   insert into public.purchase_bills(id, bill_no, supplier_ref, supplier_id, bill_date, due_date, subtotal, vat_amount, total, memo, entry_id, created_by)
   values (v_id, v_no, p_supplier_ref, p_supplier_id, p_bill_date, v_due, v_sub, v_vat_t, v_total, p_memo, v_entry, auth.uid());
-  for rec in select * from jsonb_array_elements(v_rows) x loop
+  for l in select * from jsonb_array_elements(v_rows) loop
     insert into public.purchase_bill_lines(bill_id, line_no, product_id, qty, unit_cost, vat_rate, line_net, vat_amount, movement_id)
-    values (v_id, (rec.x->>'line_no')::int, (rec.x->>'product_id')::uuid, (rec.x->>'qty')::int, (rec.x->>'unit_cost')::numeric,
-            (rec.x->>'vat_rate')::numeric, (rec.x->>'line_net')::numeric, (rec.x->>'vat_amount')::numeric, (rec.x->>'movement_id')::uuid);
+    values (v_id, (l->>'line_no')::int, (l->>'product_id')::uuid, (l->>'qty')::int, (l->>'unit_cost')::numeric,
+            (l->>'vat_rate')::numeric, (l->>'line_net')::numeric, (l->>'vat_amount')::numeric, (l->>'movement_id')::uuid);
   end loop;
   return jsonb_build_object('bill_id', v_id, 'bill_no', v_no, 'subtotal', v_sub, 'vat', v_vat_t, 'total', v_total, 'entry_id', v_entry);
 end $$;
