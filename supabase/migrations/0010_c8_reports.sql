@@ -17,7 +17,7 @@ begin
     'customers',           (select count(*) from public.customers),
     'business_customers',  (select count(*) from public.customers where type = 'business'),
     'open_tickets',        (select count(*) from public.maintenance_tickets where status not in ('closed', 'signed')),
-    'pending_quotations',  (select count(*) from public.quotations where status in ('draft', 'sent')),
+    'pending_quotations',  (select count(*) from public.quotations where status = 'sent'),
     'month_revenue',       coalesce((select sum(l.credit - l.debit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
                                       where l.account_code = '511' and e.entry_date between v_start and v_end), 0),
     'month_cogs',          coalesce((select sum(l.debit - l.credit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
