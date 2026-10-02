@@ -4,9 +4,12 @@ import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { nextStatuses, issueSignatureToken } from "@/lib/maintenance";
+import { generateCode } from "@/lib/codes";
+import { insertWithGeneratedCode, pgErrorMessage } from "@/lib/actions/_shared";
+import type { TicketStatus } from "@/types/db";
 
 // ============================================================
 // MAINTENANCE CONTRACT ACTIONS
@@ -23,12 +26,6 @@ const ContractSchema = z.object({
   sla_hours: z.coerce.number().int().min(1).default(24),
   status: z.enum(["active", "expired", "cancelled"]).default("active"),
 });
-
-function generateContractCode(): string {
-  const year = new Date().getFullYear();
-  const rand = randomBytes(2).toString("hex").toUpperCase();
-  return `HD-${year}-${rand}`;
-}
 
 export async function createContractAction(formData: FormData) {
   const auth = await requireUser();
@@ -50,14 +47,13 @@ export async function createContractAction(formData: FormData) {
   }
 
   const admin = createAdminClient();
-  const code = parsed.data.code ?? generateContractCode();
-  const { data, error } = await admin
-    .from("maintenance_contracts")
-    .insert({ ...parsed.data, code })
-    .select("id")
-    .single();
+  const { data, error } = await insertWithGeneratedCode<{ id: string }>(
+    () => parsed.data.code ?? generateCode("HD"),
+    (code) => admin.from("maintenance_contracts").insert({ ...parsed.data, code }).select("id").single(),
+    parsed.data.code ? 1 : 5, // a code typed by the user is never silently replaced
+  );
 
-  if (error) return { ok: false as const, error: error.message };
+  if (error || !data) return { ok: false as const, error: error ? pgErrorMessage(error) : "Không tạo được hợp đồng" };
   revalidatePath("/maintenance/contracts");
   redirect(`/maintenance/contracts/${data.id}`);
 }
@@ -166,17 +162,6 @@ async function getContractSla(contractId: string): Promise<number> {
   return data?.sla_hours ?? 24;
 }
 
-const TICKET_STATUS_TRANSITIONS: Record<string, string[]> = {
-  received: ["assigned", "in_progress", "closed"],
-  assigned: ["in_progress", "completed", "closed"],
-  in_progress: ["waiting_parts", "completed", "closed"],
-  waiting_parts: ["in_progress", "completed", "closed"],
-  completed: ["awaiting_signature", "closed"],
-  awaiting_signature: ["signed", "completed"],
-  signed: ["closed"],
-  closed: [],
-};
-
 export async function updateTicketStatusAction(id: string, newStatus: string) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
@@ -189,7 +174,7 @@ export async function updateTicketStatusAction(id: string, newStatus: string) {
 
   if (!ticket) return { ok: false as const, error: "Không tìm thấy ticket" };
 
-  const allowed = TICKET_STATUS_TRANSITIONS[ticket.status] ?? [];
+  const allowed = nextStatuses(ticket.status as TicketStatus) as string[];
   if (!allowed.includes(newStatus)) {
     return { ok: false as const, error: `Không thể chuyển từ ${ticket.status} sang ${newStatus}` };
   }
@@ -258,18 +243,8 @@ export async function addMaintenanceLogAction(formData: FormData) {
 export async function issueSignatureTokenAction(ticketId: string) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
-  const admin = createAdminClient();
-  const token = randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  const { error } = await admin.from("signature_tokens").insert({
-    ticket_id: ticketId,
-    token,
-    expires_at: expiresAt,
-  });
-
-  if (error) return { ok: false as const, error: error.message };
-
-  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign/${token}`;
-  return { ok: true as const, url };
+  if (!z.string().uuid().safeParse(ticketId).success) return { ok: false as const, error: "Mã ticket không hợp lệ" };
+  const res = await issueSignatureToken(ticketId, 7);
+  if (!res) return { ok: false as const, error: "Không tạo được liên kết ký" };
+  return { ok: true as const, url: res.url };
 }

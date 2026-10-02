@@ -2,16 +2,14 @@ import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatVND, formatDate } from "@/lib/utils";
+import { vnMonthKey, vnMonthsAgoStartIso } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
 async function getReports() {
   const sb = createAdminClient();
 
-  const twelveMonthsAgo = new Date();
-  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 11);
-  twelveMonthsAgo.setDate(1);
-  twelveMonthsAgo.setHours(0, 0, 0, 0);
+  const twelveMonthsAgo = vnMonthsAgoStartIso(11);
 
   const [{ data: monthRevenue }, { data: topProducts }, { data: topCustomers }, { data: debts }] =
     await Promise.all([
@@ -19,7 +17,7 @@ async function getReports() {
         .from("quotations")
         .select("total, created_at")
         .eq("status", "approved")
-        .gte("created_at", twelveMonthsAgo.toISOString()),
+        .gte("created_at", twelveMonthsAgo),
       sb
         .from("quotation_items")
         .select("qty, line_total, products(name, sku), quotations!inner(status)")
@@ -41,8 +39,7 @@ async function getReports() {
   // Group revenue by month
   const monthly: Record<string, number> = {};
   for (const r of monthRevenue ?? []) {
-    const d = new Date(r.created_at);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const key = vnMonthKey(r.created_at);
     monthly[key] = (monthly[key] ?? 0) + (r.total ?? 0);
   }
   const sortedMonths = Object.entries(monthly).sort(([a], [b]) => a.localeCompare(b));

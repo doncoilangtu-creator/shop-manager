@@ -1,5 +1,7 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { VN_TZ } from "@/lib/time";
+
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,16 +16,13 @@ export function formatVND(value: number | string | null | undefined): string {
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "";
   const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleDateString("vi-VN");
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("vi-VN", { timeZone: VN_TZ });
 }
 
-export function generateCode(prefix: string): string {
-  // Compact random code: PREFIX-YYYYMMDD-XXXXX
-  const now = new Date();
-  const ymd =
-    now.getFullYear().toString() +
-    String(now.getMonth() + 1).padStart(2, "0") +
-    String(now.getDate()).padStart(2, "0");
-  const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
-  return `${prefix}-${ymd}-${rand}`;
+export function formatDateTime(date: string | Date | null | undefined): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("vi-VN", { timeZone: VN_TZ });
 }

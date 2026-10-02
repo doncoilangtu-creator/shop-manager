@@ -9,13 +9,13 @@ import {
 import { Package, AlertTriangle, Briefcase, Wrench, Receipt, TrendingUp } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatVND, formatDate } from "@/lib/utils";
+import { vnCurrentMonthStartIso } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
 async function getDashboardStats() {
   const sb = createAdminClient();
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const startOfMonth = vnCurrentMonthStartIso();
 
   const [products, lowStock, customers, bizCustomers, openTickets, pendingQuotes, monthRevenue, recentTickets, recentQuotes] =
     await Promise.all([
