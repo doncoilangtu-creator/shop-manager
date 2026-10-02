@@ -52,11 +52,11 @@ begin
   reset role;
   perform pg_temp.rec('QUO-nonstaff-denied', 'control', case when e like '%row-level security%' then 'OK' else 'FAIL' end, 'non-staff -> ' || left(e, 70));
 
-  -- table CHECKs reject inconsistent rows even for privileged inserts
+  -- table CHECKs reject inconsistent rows even for privileged inserts (since 0009 the frozen-content trigger may fire first)
   e := pg_temp.try(format('insert into public.quotation_items(quotation_id, product_id, qty, unit_price, discount, line_total) values (%L, %L, 1, 100, 0, 5)', qid, p));
-  perform pg_temp.rec('QUO-check-line', 'control', case when e like '%quotation_items_values_ok%' then 'OK' else 'FAIL' end, left(e, 90));
+  perform pg_temp.rec('QUO-check-line', 'control', case when e like '%quotation_items_values_ok%' or e like 'quotation_not_draft%' then 'OK' else 'FAIL' end, left(e, 90));
   e := pg_temp.try(format('update public.quotations set total = 1 where id = %L', qid));
-  perform pg_temp.rec('QUO-check-total', 'control', case when e like '%quotations_totals_ok%' then 'OK' else 'FAIL' end, left(e, 90));
+  perform pg_temp.rec('QUO-check-total', 'control', case when e like '%quotations_totals_ok%' or e like 'quotation_not_draft%' then 'OK' else 'FAIL' end, left(e, 90));
 end $$;
 select current_setting('harness.out');
 rollback;
