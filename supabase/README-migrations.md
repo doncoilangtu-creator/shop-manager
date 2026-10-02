@@ -40,4 +40,16 @@ Rules: nothing is ever UPDATEd or DELETEd in the ledger — corrections are reve
 
 Tests: `tests/db/cases/20..24`, end-to-end: `bash scripts/e2e-scenario.sh`.
 
-Deploy note: the Telegram bot's `/nhap` and `/ban` still write `products.stock_qty` directly and will be rejected after 0003 until C9 lands.
+Deploy note: the Telegram bot built BEFORE branch `refactor/c9-bot` writes `products.stock_qty` directly and is rejected after 0003. Deploy the C9 bot together with these migrations.
+
+## 0007–0010 (branches c4 … c8)
+
+| file | content |
+|---|---|
+| 0007_c4_stock_count.sql | `stock_count(product, counted, notes)` row-locked absolute stocktake; `v_stock_card` view |
+| 0008_c5_fifo_allocation.sql | `post_receipt_fifo`, `post_disbursement_fifo` (oldest document first, partner row locked, remainder stays as unapplied credit) |
+| 0009_c6_quotations.sql | quotation status FSM trigger, content frozen after draft, `quotations.pdf_path`, private bucket (guarded: only if the storage schema exists), `invoice_from_quotation()` (≤1 VND rounding tolerance, one active invoice per quotation) |
+| 0010_c8_reports.sql | `report_dashboard()`, `report_monthly_pnl()`, `report_top_products()`, `report_top_customers()` — GL based, Asia/Ho_Chi_Minh months, `has_app_access()` (staff or service_role/bot) |
+
+Tests: `tests/db/cases/25..28`. Full run: `bash tests/db/run.sh --strict`.
+Untested on real Supabase: the guarded storage-bucket statement in 0009, RLS through PostgREST, any role/grant difference between Supabase and the local compat layer. Apply to a staging project first.
