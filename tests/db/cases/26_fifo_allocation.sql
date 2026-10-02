@@ -25,11 +25,11 @@ begin
   perform pg_temp.act_as('authenticated', u);
   b1 := public.post_purchase_bill(s, '2025-04-01', null, jsonb_build_array(jsonb_build_object('product_id', p, 'qty', 5, 'unit_cost', 1000)));
   b2 := public.post_purchase_bill(s, '2025-04-02', null, jsonb_build_array(jsonb_build_object('product_id', p, 'qty', 5, 'unit_cost', 3000)));
-  r := public.post_disbursement_fifo(s, 7000, 'bank', '2025-04-05');
+  r := public.post_disbursement_fifo(s, 107000, 'bank', '2025-04-05');
   reset role;
   select outstanding into o1 from public.v_purchase_bill_open where bill_id = (b1->>'bill_id')::uuid;
   select outstanding into o2 from public.v_purchase_bill_open where bill_id = (b2->>'bill_id')::uuid;
-  perform pg_temp.rec('FIFO-disbursement', 'control', pg_temp.ok(o1 = 0 and o2 = 13000), format('7,000 against bills 5,000 / 15,000 -> outstanding %s / %s (expect 0 / 13,000)', o1, o2));
+  perform pg_temp.rec('FIFO-disbursement', 'control', pg_temp.ok(o1 = 0 and o2 = 13000), format('107,000 against bills 100,000 (older) then 5,000 and 15,000 -> outstanding %s / %s (expect 0 / 13,000)', o1, o2));
   perform pg_temp.act_as('authenticated', u);
   e := pg_temp.try(format('select public.post_receipt_fifo(%L, 1, ''cash'', ''2025-03-21'')', gen_random_uuid()));
   perform pg_temp.rec('FIFO-unknown-customer', 'control', pg_temp.ok(e = 'customer_not_found'), e);
