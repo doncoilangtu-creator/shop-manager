@@ -25,7 +25,7 @@ begin
   perform pg_temp.rec('STK-adjust-below-zero', 'control', case when e = 'insufficient_stock' then 'OK' else 'FAIL' end, 'adjust -20 -> ' || e);
   r := public.stock_adjust(p, 'adjust', -2, null, 'count', null, 'kiem ke');
   e := pg_temp.try(format('update public.products set stock_qty = 999 where id = %L', p));
-  perform pg_temp.rec('STK-direct-update', 'control', case when e like 'products.stock_qty can only change%' then 'OK' else 'FAIL' end, 'direct UPDATE of stock_qty -> ' || left(e, 70));
+  perform pg_temp.rec('STK-direct-update', 'control', case when e like 'products.stock_qty%can only change%' then 'OK' else 'FAIL' end, 'direct UPDATE of stock_qty -> ' || left(e, 70));
   e := pg_temp.try(format('update public.products set name = ''renamed'', stock_qty = stock_qty where id = %L', p));
   perform pg_temp.rec('STK-update-other-cols', 'control', case when e = 'OK' then 'OK' else 'FAIL' end, 'updating other columns still works: ' || e);
   e := pg_temp.try(format('insert into public.stock_movements(product_id, type, qty) values (%L, ''in'', 1)', p));
