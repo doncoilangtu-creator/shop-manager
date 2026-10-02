@@ -24,3 +24,17 @@ describe("report parsers", () => {
     expect(ok.rpc).toHaveBeenCalledWith("report_monthly_pnl", { p_from: "a" });
   });
 });
+
+import { parseAging, parseRecon, parseTrialBalance, parseVat } from "@/lib/reports";
+describe("accounting report parsers", () => {
+  it("handles vat_report single-row table and missing rows", () => {
+    expect(parseVat([{ output_vat: "4500000", input_vat: 10, payable: "-5" }])).toEqual({ output_vat: 4500000, input_vat: 10, payable: -5 });
+    expect(parseVat([])).toEqual({ output_vat: 0, input_vat: 0, payable: 0 });
+  });
+  it("coerces trial balance, aging and reconciliation rows", () => {
+    expect(parseTrialBalance([{ account_code: "131", name: "AR", debit: "5", credit: 0, balance: "5" }])[0]).toMatchObject({ debit: 5, balance: 5 });
+    expect(parseAging([{ customer_id: "c", customer_name: "A", d90_plus: "7", open_total: 7 }])[0]).toMatchObject({ d90_plus: 7, not_due: 0 });
+    expect(parseRecon([{ check_name: "x", gl_value: 1, subledger_value: "1", diff: "0" }])[0].diff).toBe(0);
+    expect(parseRecon(undefined)).toEqual([]);
+  });
+});

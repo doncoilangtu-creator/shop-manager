@@ -45,3 +45,22 @@ export async function rpcOrThrow<T>(sb: SupabaseClient, fn: string, args: Record
   if (error) throw new Error(`${fn}: ${error.message}`);
   return parse(data);
 }
+
+export type TrialBalanceRow = { account_code: string; name: string; debit: number; credit: number; balance: number };
+export type VatReport = { output_vat: number; input_vat: number; payable: number };
+export type AgingRow = { customer_id: string; customer_name: string; not_due: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; open_total: number; unapplied: number };
+export type ReconRow = { check_name: string; gl_value: number; subledger_value: number; diff: number };
+
+const rows = (raw: unknown): Record<string, unknown>[] => (Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []);
+
+export const parseTrialBalance = (raw: unknown): TrialBalanceRow[] =>
+  rows(raw).map((o) => ({ account_code: String(o.account_code), name: String(o.name ?? ""), debit: num(o.debit), credit: num(o.credit), balance: num(o.balance) }));
+export const parseVat = (raw: unknown): VatReport => {
+  const o = rows(raw)[0] ?? {};
+  return { output_vat: num(o.output_vat), input_vat: num(o.input_vat), payable: num(o.payable) };
+};
+export const parseAging = (raw: unknown): AgingRow[] =>
+  rows(raw).map((o) => ({ customer_id: String(o.customer_id), customer_name: String(o.customer_name ?? ""), not_due: num(o.not_due), d1_30: num(o.d1_30), d31_60: num(o.d31_60),
+    d61_90: num(o.d61_90), d90_plus: num(o.d90_plus), open_total: num(o.open_total), unapplied: num(o.unapplied) }));
+export const parseRecon = (raw: unknown): ReconRow[] =>
+  rows(raw).map((o) => ({ check_name: String(o.check_name), gl_value: num(o.gl_value), subledger_value: num(o.subledger_value), diff: num(o.diff) }));
