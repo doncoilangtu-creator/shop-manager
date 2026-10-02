@@ -1,8 +1,8 @@
 # Shop Manager
 
-Hệ thống quản lý **cửa hàng máy tính** — Next.js 14 (App Router) + Supabase + Tailwind + shadcn/ui.
+Hệ thống quản lý **cửa hàng máy tính** — Next.js 15 (App Router, React 19) + Supabase + Tailwind + shadcn/ui.
 
-> Thiết kế tối giản cho **1 người dùng** (chủ shop). Mọi thao tác ghi/đọc đều đi qua service-role Supabase client, RLS chỉ siết các route public (ký online).
+> Thiết kế cho cửa hàng nhỏ: **chỉ tài khoản có trong danh sách `app_users` (owner/staff) mới truy cập được**. Mọi server action đều gọi `requireUser()` và đi qua client của người dùng (RLS); service-role chỉ dùng ở server cho việc thật sự cần (ký online, bootstrap) và ở bot. Sổ kế toán kép (append-only) là nguồn số liệu cho báo cáo.
 
 ---
 
@@ -10,7 +10,7 @@ Hệ thống quản lý **cửa hàng máy tính** — Next.js 14 (App Router) +
 
 | Layer       | Công nghệ                                        |
 | ----------- | ------------------------------------------------ |
-| Framework   | Next.js 14 (App Router) + TypeScript             |
+| Framework   | Next.js 15 (App Router) + React 19 + TypeScript  |
 | Styling     | Tailwind CSS + shadcn/ui (chỉ component cần)    |
 | Database    | Supabase Postgres                                |
 | Auth        | Supabase Auth (email + password) — `@supabase/ssr` |
@@ -95,7 +95,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ### 4. Chạy migrations
 
-Vào **Supabase Dashboard → SQL Editor → New query**, copy nội dung `supabase/migrations/0001_init.sql` rồi **Run**.
+Chạy **theo thứ tự tên file** các migration trong `supabase/migrations/` (SQL Editor, hoặc `supabase db push` trên project **staging** trước): `0001_init` → `0002_quotation_pdf_url` → `0003_c2_hardening` → `0004_accounting_ledger` → `0005_inventory_costing` → `0006_sales_purchases_ar_ap` → `0007_c4_stock_count` → `0008_c5_fifo_allocation` → `0009_c6_quotations` → `0010_c8_reports`. Đọc `supabase/README-migrations.md` trước khi chạy trên dữ liệu thật (0003 siết RLS, thu hồi quyền anon, backfill danh sách nhân viên từ `auth.users`; 0004–0006 tạo sổ kế toán — **chưa kiểm thử trên Supabase thật**, chỉ trên Postgres cục bộ).
 
 Sau đó chạy tiếp `supabase/seed.sql` (tuỳ chọn — tạo vài record demo).
 
@@ -156,12 +156,20 @@ Toàn bộ schema trong `supabase/migrations/0001_init.sql` (đầy đủ ENUM, 
 Bot (`cd bot`): `npm run typecheck`, `npm test`, `npm run build`.
 Tests/CI chạy trên **Node 22** (vitest 5 yêu cầu Node ≥ 22.12; chỉ ảnh hưởng dev/CI, không ảnh hưởng runtime Vercel).
 
-### CI & baseline (cụm C0, 2026-10-02)
+### Kiểm thử & CI (cập nhật sau cụm C10, 2026-10-03)
 
-GitHub Actions (`.github/workflows/ci.yml`) chạy cho mọi PR: web = `npm ci → typecheck → lint → test → build` (env Supabase giả), bot = `npm ci → typecheck → test → build`. Baseline "không được tệ hơn":
-
-| Mục | Kết quả |
+| Lệnh | Việc kiểm tra |
 | --- | --- |
+| `npm run typecheck` / `npm run lint` / `npm test` / `npm run build` | web: 0 lỗi tsc, 0 cảnh báo lint, vitest, build |
+| `cd bot && npm run typecheck && npm test && npm run build` | bot (grammY) |
+| `npm audit --omit=dev` (web và bot) | 0 lỗ hổng |
+| `bash scripts/local-db.sh up && bash tests/db/run.sh --strict` | bộ test DB trên **Postgres cục bộ** (không phải Supabase): mọi điểm yếu phải ở trạng thái NOT_REPRODUCIBLE, mọi control OK |
+| `bash scripts/e2e-scenario.sh` | kịch bản cuối-đến-cuối qua RPC: nhập, bán, giá vốn, thu tiền, đối chiếu công nợ, khóa kỳ, bút toán đảo, đường đi của bot |
+| `node scripts/check-env-example.mjs . .env.example` | `.env.example` khớp với biến môi trường code đọc |
+
+CI (`.github/workflows/ci.yml`): job `web`, `bot` (chặn khi audit lỗi), job `db` (Postgres cục bộ, **chưa từng chạy trên GitHub Actions** nên đang `continue-on-error` cho tới khi xanh một lần). Tất cả dùng Supabase giả/không dùng Supabase thật.
+
+--- | --- |
 | `tsc --noEmit` (web, bot) | 0 lỗi |
 | `next lint` | 0 lỗi, 13 warning (12 `no-explicit-any`, 1 `no-img-element`) |
 | `npm test` | web 34 test, bot 30 test — pass |
@@ -175,11 +183,12 @@ GitHub Actions (`.github/workflows/ci.yml`) chạy cho mọi PR: web = `npm ci �
 - **Kho hàng** — CRUD sản phẩm theo 6 nhóm (PC, Laptop, Camera, Máy in, Mực in, Thiết bị mạng), nhập kho nhanh, cảnh báo tồn thấp, lịch sử biến động.
 - **Khách hàng** — CRM gọn: lẻ vs doanh nghiệp, tìm theo tên/SĐT/MST, ghi chú + tag.
 - **Đối tác (NCC)** — Danh sách nhà cung cấp + quản lý công nợ phải trả.
-- **Báo giá** — Tạo BG chọn SP từ kho, chiết khấu từng dòng + tổng, VAT 10%, **xuất PDF** qua `react-pdf`, gửi khách qua Telegram/email.
+- **Báo giá** — Tạo/sửa BG (lưu nguyên tử bằng RPC), chiết khấu, VAT, máy trạng thái draft→sent→approved/rejected, PDF lưu bucket **private** (link ký 1 giờ), BG đã duyệt → **hóa đơn bán** (một BG một hóa đơn).
+- **Kế toán** — Sổ cái kép append-only (sửa = bút toán đảo), khóa/mở kỳ (chỉ owner), giá vốn bình quân, hóa đơn bán/mua, thu/chi tiền phân bổ FIFO, công nợ phải thu/trả, tuổi nợ, báo cáo VAT, bảng cân đối phát sinh, đối chiếu sổ phụ ↔ sổ cái.
 - **Bảo trì** — Hợp đồng bảo trì DN, ticket workflow (tiếp nhận → phân công → xử lý → chờ ký → ký → đóng), **ký online** trên web (canvas signature pad), báo cáo tháng.
 - **Dashboard** — Tổng quan: tổng SP, sắp hết hàng, khách DN, ticket mở, BG chờ duyệt, doanh thu tháng, activity gần nhất.
-- **Báo cáo** — Doanh thu 12 tháng (bar chart), top 10 SP, top 10 khách, công nợ phải thu.
-- **Telegram Bot** — 8 lệnh chủ shop (`/ton`, `/nhap`, `/ban`, `/khach`, `/baotri`, `/doanhthu`, `/top`, `/start`) + 3 lệnh khách DN (`/hopdong`, `/yeucaubt`, `/ticket`).
+- **Báo cáo** — Doanh thu + lãi gộp 12 tháng (từ sổ cái, giờ Việt Nam), top 10 SP/khách (gộp trong SQL), báo cáo kế toán (`/reports/accounting`), báo cáo bảo trì tháng (`/maintenance/reports`).
+- **Telegram Bot** — 8 lệnh chủ shop (`/ton`, `/nhap`, `/ban`, `/khach`, `/baotri`, `/doanhthu`, `/top`, `/start`) + 3 lệnh khách DN (`/hopdong`, `/yeucaubt`, `/ticket`). `/nhap` gọi `stock_adjust`, `/ban` ghi **hóa đơn** qua `post_sales_invoice` (VAT 0%, hạn 7 ngày), `/doanhthu` và `/top` đọc từ sổ cái. Hỗ trợ tên có dấu cách: `/ban "Nguyen Van A" HP-1234 2`.
 
 ---
 
@@ -192,7 +201,7 @@ GitHub Actions (`.github/workflows/ci.yml`) chạy cho mọi PR: web = `npm ci �
 
 ### Bước 1 — Supabase
 1. Tạo project mới trên Supabase.
-2. Vào **SQL Editor** → paste nội dung `supabase/migrations/0001_init.sql` → Run.
+2. Chạy lần lượt các file trong `supabase/migrations/` theo thứ tự tên (xem mục *Chạy migrations* ở trên).
 3. (Tùy chọn) Paste `supabase/seed.sql` → Run để có data mẫu.
 4. Vào **Settings → API** → copy `URL`, `anon key`, `service_role key`.
 
@@ -239,7 +248,7 @@ Mở http://localhost:3000, đăng nhập với `admin@shop.local` + password �
    npm install
    cp .env.example .env
    # Sửa .env: TELEGRAM_BOT_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL
-   npm run dev
+   npm run dev   # polling (local)
    ```
 4. Mở Telegram, nhắn `/start` cho bot của bạn.
 
@@ -248,24 +257,19 @@ Mở http://localhost:3000, đăng nhập với `admin@shop.local` + password �
 ## Deploy
 
 ### Web app → Vercel
-1. Push repo lên GitHub.
-2. Import vào [Vercel](https://vercel.com).
-3. Thêm env vars giống `.env.local`.
-4. `vercel.json` đã có sẵn `regions: ["sin1"]` (Singapore, gần VN).
+1. Push repo lên GitHub, import vào [Vercel](https://vercel.com).
+2. Thêm env vars giống `.env.example` (đặt `NEXT_PUBLIC_APP_URL` = URL production; `vercel.json` không còn tham chiếu secret `@app_url`).
+3. `vercel.json` có `regions: ["sin1"]` (Singapore, gần VN).
+4. **Thứ tự triển khai:** migration (staging → production) **cùng lúc** với bản bot mới; bot cũ ghi thẳng `products.stock_qty` sẽ bị migration 0003 từ chối.
 
-### Bot → Railway / Render / VPS
-Bot cần Node.js server chạy liên tục (polling) hoặc webhook. Hai cách:
+### Bot → Docker (Railway / Render / Fly / VPS)
+`bot/Dockerfile` (Node 22 alpine, chạy bằng user `node`, healthcheck `GET /healthz` ở chế độ webhook). `bot/railway.json` và `render.yaml` (blueprint) đã có sẵn; **chưa build thử bằng Docker/Railway/Render trong môi trường này**.
 
-**Cách A — Polling (đơn giản nhất):**
-- Tạo service mới trên [Railway](https://railway.app) hoặc [Render](https://render.com).
-- Connect repo, chỉ root directory = `bot`.
-- Build: `npm install && npm run build`
-- Start: `npm start`
-- Env: copy từ `bot/.env.example`.
+**Polling (đơn giản):** `BOT_MODE=polling` (mặc định); cần 1 process chạy liên tục.
 
-**Cách B — Webhook (production):**
-- Đổi `BOT_MODE=webhook`, set `WEBHOOK_URL=https://your-bot.up.railway.app/telegram`.
-- Telegram tự gọi webhook khi có update — không tốn kết nối persistent.
+**Webhook (production):**
+- `BOT_MODE=webhook`, `WEBHOOK_URL=https://<bot-host>` (không kèm path), `WEBHOOK_SECRET` ≥16 ký tự (`openssl rand -hex 24`).
+- Bot tự gọi `setWebhook(WEBHOOK_URL + WEBHOOK_PATH, secret_token=WEBHOOK_SECRET)` khi khởi động; request không có header `X-Telegram-Bot-Api-Secret-Token` đúng bị trả 401, body > 1 MiB bị 413. Thiếu `WEBHOOK_SECRET` bot từ chối khởi động.
 
 ---
 
@@ -287,7 +291,7 @@ shop-manager/
 ├── components/                   # UI components (shadcn + custom)
 ├── lib/                          # Supabase clients + utils
 ├── supabase/
-│   ├── migrations/0001_init.sql  # Schema 16 bảng + RLS
+│   ├── migrations/               # 0001…0010 (xem supabase/README-migrations.md)
 │   └── seed.sql                  # Data mẫu
 ├── bot/                          # Telegram bot (Node.js + grammY)
 │   ├── src/
@@ -303,20 +307,18 @@ shop-manager/
 
 ## Quyết định thiết kế
 
-1. **Không dùng Redux/Zustand.** Toàn bộ state là server state (RSC + Supabase). Client state chỉ là form state (`react-hook-form`).
-2. **Service-role cho mọi ghi/đọc từ dashboard.** Vì là 1 người dùng, không cần RLS phức tạp. RLS chỉ bật cho:
-   - `signature_tokens` (anon đọc để resolve token).
-   - `signatures` (anon insert khi khách ký).
-3. **Public route `/sign/[token]`.** Middleware Next.js cho phép đi qua không cần đăng nhập; API `/api/sign/[token]` cũng vậy.
-4. **shadcn/ui cài thủ công.** Chỉ 8 component (button, card, input, label, separator, badge, table, dropdown-menu, avatar, skeleton) — không dùng `shadcn-ui` CLI để giữ repo gọn.
-5. **Bootstrap admin chạy tay.** `npm run bootstrap-admin` (idempotent), không chạy ở cold start.
-6. **Signature pad không dùng lib ngoài.** HTML `<canvas>` + Pointer Events — đủ dùng cho ký chữ, gọn, không cần thêm dependency.
+1. **Không dùng Redux/Zustand.** State là server state (RSC + Supabase); client state chỉ là form.
+2. **Truy cập theo danh sách `app_users` + RLS.** Anon không đọc/ghi gì ngoài `sign_ticket()`; tài khoản Supabase Auth không nằm trong danh sách không vào được dù đăng ký được. **Tắt đăng ký công khai** trong Supabase Auth.
+3. **Số tiền/tồn kho chỉ đổi qua RPC** (`stock_adjust`, `stock_count`, `post_*`): sổ kho và sổ cái append-only, sửa sai bằng bút toán đảo, kỳ đã khóa không ghi được.
+4. **Public route `/sign/[token]`**: token dùng 1 lần, hết hạn, giới hạn tốc độ theo IP/token; chữ ký ghi qua `sign_ticket()`.
+5. **Giờ Việt Nam** (`Asia/Ho_Chi_Minh`) cho mọi mã chứng từ, ngày hiển thị và biên tháng báo cáo.
+6. **shadcn/ui cài thủ công**, **bootstrap admin chạy tay** (`npm run bootstrap-admin`), **signature pad** bằng canvas thuần.
 
 ---
 
-## Roadmap (sau khi foundation xong)
+## Chưa làm / chưa kiểm chứng
 
-- CRUD cho 7 module (Kho / Khách / NCC / Báo giá / Bảo trì / Báo cáo)
-- Xuất PDF báo giá & biên bản bảo trì (`@react-pdf/renderer`)
-- Telegram bot webhook → đẩy `notifications` + cập nhật `bot_users`
-- Cron jobs: cảnh báo tồn thấp, nhắc công nợ
+- Chưa chạy trên Supabase thật: Auth/GoTrue, RLS qua PostgREST, Storage (quyền bucket), Realtime. Bộ test DB dùng Postgres thuần + lớp tương thích (`SET ROLE` + `request.jwt.claims`).
+- Chưa kiểm thử với Telegram thật và chưa deploy Vercel/Railway/Render.
+- `post_stock_adjustments` phải được chạy (nút ở `/reports/accounting`) để phiếu kho không chứng từ (nhập tay, kiểm kê, bot) vào sổ cái.
+- Cron nhắc công nợ / cảnh báo tồn thấp, gửi báo giá qua email/Telegram: chưa có.
