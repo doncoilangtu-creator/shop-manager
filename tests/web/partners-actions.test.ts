@@ -24,7 +24,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
 const UUID = "11111111-1111-4111-8111-111111111111";
-const form = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
+const form = (o: Record<string, string | undefined>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) { if (v !== undefined) f.set(k, v); } return f; };
 
 beforeEach(() => {
   rpc.mockReset(); getUser.mockReset(); refs = {}; deleted.length = 0;
