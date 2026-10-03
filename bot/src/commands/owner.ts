@@ -7,6 +7,8 @@ import { dbErrorMessage } from "../lib/errors";
 
 const DENIED = "⛔ Lệnh chỉ dành cho chủ shop.";
 const HTML = { parse_mode: "HTML" as const };
+/** Bán nhanh thu ngay: tiền mặt = TK 111 (public._method_account('cash')); schema chỉ có 'cash' | 'bank'. */
+const PAY_METHOD = "cash";
 
 type ProductRow = { id: string; sku: string; name: string; sell_price: number; stock_qty: number; min_stock: number };
 type CustomerRow = { id: string; name: string; phone: string | null; type?: string };
@@ -55,7 +57,13 @@ export function registerOwnerCommands(bot: Bot) {
     await ctx.reply(`✅ Đã nhập <b>${qty}</b> ${esc(prod.name)} (${esc(sku)})\nTồn mới: <b>${Number.isFinite(newQty) ? newQty : "?"}</b>`, HTML);
   });
 
-  // /ban <khách/SĐT> <SKU> <SL> — bán nhanh: ghi HÓA ĐƠN (post_sales_invoice): trừ kho theo giá vốn bình quân + bút toán kép.
+  // /ban <khách/SĐT> <SKU> <SL> — bán nhanh, THU TIỀN NGAY (hộ kinh doanh, giá bán đã gồm VAT):
+  //   1) post_sales_invoice: vat_rate = 0 và unit_price = sell_price => tổng hóa đơn = giá bán x SL, thuế không tách riêng
+  //      (giá niêm yết được coi là ĐÃ GỒM VAT; hộ kinh doanh không kê khai/khấu trừ VAT riêng). Hạn thanh toán = ngày bán
+  //      (không còn hạn 7 ngày) và p_allow_over_limit = true vì hóa đơn được thu đủ ngay sau đó (không làm tăng công nợ).
+  //   2) post_receipt: phiếu thu TIỀN MẶT (TK 111, mặc định) đúng bằng tổng hóa đơn, phân bổ thẳng vào hóa đơn này (KHÔNG dùng
+  //      post_receipt_fifo vì FIFO sẽ trả nợ cũ của khách trước) => công nợ 131 của lần bán này = 0.
+  //   Hai RPC là hai giao dịch riêng: nếu thu tiền lỗi thì bot đảo hóa đơn vừa ghi (reverse_sales_invoice) để không để lại công nợ treo.
   bot.command("ban", async (ctx: Context) => {
     const u = await authenticateOwner(ctx);
     if (!u) return ctx.reply(DENIED);
@@ -84,18 +92,38 @@ export function registerOwnerCommands(bot: Bot) {
     const p = prod as ProductRow;
 
     const today = vnDate();
+    const memo = `Bán qua Telegram bot (${u.name ?? u.id})`;
     const { data, error } = await sb.rpc("post_sales_invoice", {
-      p_customer_id: cust.id, p_invoice_date: today, p_due_date: addDaysYmd(today, 7),
-      p_lines: [{ product_id: p.id, qty, unit_price: p.sell_price, vat_rate: 0 }],
-      p_memo: `Bán qua Telegram bot (${u.name ?? u.id})`, p_quotation_id: null, p_allow_over_limit: false,
+      p_customer_id: cust.id, p_invoice_date: today, p_due_date: today,
+      p_lines: [{ product_id: p.id, qty, unit_price: p.sell_price, vat_rate: 0 }], // giá đã gồm VAT, VAT 0%
+      p_memo: memo, p_quotation_id: null, p_allow_over_limit: true, // thu đủ ngay => không tạo công nợ mới
     });
     if (error) {
       if (error.message.includes("insufficient_stock")) return ctx.reply(`Tồn không đủ (còn ${p.stock_qty}).`);
       return ctx.reply(dbErrorMessage(error.message));
     }
     const r = (data ?? {}) as { invoice_id?: string; invoice_no?: string; total?: number };
+    const total = Number(r.total ?? p.sell_price * qty);
+    if (!r.invoice_id) return ctx.reply("Không nhận được mã hóa đơn từ hệ thống, hãy kiểm tra trên web trước khi bán lại.");
+
+    // Thu tiền mặt đúng bằng tổng hóa đơn, phân bổ vào chính hóa đơn này.
+    const { data: rc, error: re } = await sb.rpc("post_receipt", {
+      p_customer_id: cust.id, p_amount: total, p_method: PAY_METHOD, p_date: today,
+      p_allocations: [{ invoice_id: r.invoice_id, amount: total }], p_memo: `Thu tiền ngay ${r.invoice_no ?? ""} — ${memo}`,
+    });
+    if (re) {
+      console.error("[/ban] post_receipt failed:", re.message);
+      const { error: ve } = await sb.rpc("reverse_sales_invoice", { p_invoice_id: r.invoice_id, p_date: today, p_reason: "Bot: thu tiền ngay thất bại, tự động đảo hóa đơn" });
+      return ctx.reply(
+        ve
+          ? `⚠️ Đã ghi hóa đơn <b>${esc(r.invoice_no)}</b> nhưng KHÔNG thu được tiền và cũng không tự đảo được. Hãy xử lý trên web (công nợ đang mở ${fmtVND(total)}).`
+          : `❌ Không ghi được phiếu thu nên đã tự đảo hóa đơn <b>${esc(r.invoice_no)}</b> (kho và sổ được hoàn lại). Thử lại sau.`,
+        HTML,
+      );
+    }
+    const pay = (rc ?? {}) as { payment_no?: string };
     await ctx.reply(
-      `✅ Hóa đơn <b>${esc(r.invoice_no)}</b>\nKhách: ${esc(cust.name)}\nSP: ${esc(p.name)} × ${qty}\nTổng: ${fmtVND(Number(r.total ?? p.sell_price * qty))} (chưa gồm VAT)\nHạn thanh toán: ${addDaysYmd(today, 7)}`,
+      `✅ Hóa đơn <b>${esc(r.invoice_no)}</b> — đã thu đủ tiền mặt (TK 111)\nPhiếu thu: ${esc(pay.payment_no ?? "—")}\nKhách: ${esc(cust.name)}\nSP: ${esc(p.name)} × ${qty}\nTổng: ${fmtVND(total)} (giá đã gồm VAT, VAT 0%)\nCông nợ lần bán này: 0`,
       HTML,
     );
   });

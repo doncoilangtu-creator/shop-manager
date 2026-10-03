@@ -66,7 +66,25 @@ P -c "select e.entry_no, e.entry_date, e.memo, e.reverses_id is not null as is_r
 chk "tồn kho khôi phục 10 cái / 100.000.000 theo đúng giá vốn" "$(V "select stock_qty=10 and stock_value=100000000 from products where id='$PR'")"
 chk "AR = 0, đối chiếu = 0" "$(V "select public.account_balance('131')=0 and (select bool_and(diff=0) from accounting_reconciliation())")"
 chk "hóa đơn gốc vẫn còn (chỉ gắn dấu hủy), bút toán gốc không bị sửa" "$(V "select voided_at is not null from sales_invoices where id='$INV_ID'")"
-step "8. Kiểm tra cuối"
+step "8. Telegram /ban: bán nhanh THU TIỀN NGAY (giá đã gồm VAT, VAT 0%, tiền mặt TK 111), không để lại công nợ"
+# Đúng như bot làm (bot/src/commands/owner.ts): post_sales_invoice(due = ngày bán, vat_rate 0) rồi post_receipt('cash') phân bổ vào CHÍNH hóa đơn đó.
+OLD=$(S "select public.post_sales_invoice('$C','2026-10-03','2026-11-03','[{\"product_id\":\"$PR\",\"qty\":1,\"unit_price\":5000000,\"vat_rate\":0}]'::jsonb,'Bán chịu cũ')")
+OLD_ID=$(echo "$OLD" | python3 -c 'import sys,json;print(json.load(sys.stdin)["invoice_id"])')
+CASH0=$(V "select public.account_balance('111')"); VAT0=$(V "select public.account_balance('3331')"); REV0=$(V "select public.account_balance('511')")
+QS=$(S "select public.post_sales_invoice('$C','2026-10-04','2026-10-04','[{\"product_id\":\"$PR\",\"qty\":2,\"unit_price\":20000000,\"vat_rate\":0}]'::jsonb,'Bán qua Telegram bot',null,true)")
+echo "$QS"
+QS_ID=$(echo "$QS" | python3 -c 'import sys,json;print(json.load(sys.stdin)["invoice_id"])')
+QS_TOTAL=$(echo "$QS" | python3 -c 'import sys,json;print(json.load(sys.stdin)["total"])')
+QR=$(S "select public.post_receipt('$C',$QS_TOTAL,'cash','2026-10-04',jsonb_build_array(jsonb_build_object('invoice_id','$QS_ID','amount',$QS_TOTAL)),'Thu tiền ngay')")
+echo "$QR"
+chk "tổng hóa đơn = giá x SL = 40.000.000 (giá đã gồm VAT), VAT = 0" "$(V "select total=40000000 and vat_amount=0 and subtotal=40000000 from sales_invoices where id='$QS_ID'")"
+chk "hạn thanh toán = ngày bán (không còn hạn 7 ngày)" "$(V "select due_date=invoice_date from sales_invoices where id='$QS_ID'")"
+chk "hóa đơn bán nhanh còn nợ 0" "$(V "select outstanding=0 from v_sales_invoice_open where invoice_id='$QS_ID'")"
+chk "phiếu thu là tiền mặt, phân bổ đủ 40.000.000, không còn dư chưa phân bổ" "$(V "select p.method='cash' and p.amount=40000000 and (select sum(amount) from payment_allocations where payment_id=p.id)=40000000 from payments p where p.payment_no='$(echo "$QR" | python3 -c 'import sys,json;print(json.load(sys.stdin)["payment_no"])')'")"
+chk "TK 111 tăng đúng 40.000.000; doanh thu 511 tăng 40.000.000; VAT đầu ra 3331 không đổi" "$(V "select public.account_balance('111')=$CASH0+40000000 and public.account_balance('511')=$REV0+40000000 and public.account_balance('3331')=$VAT0")"
+chk "không dùng FIFO: hóa đơn chịu cũ vẫn nợ nguyên 5.000.000; công nợ khách chỉ còn khoản cũ" "$(V "select (select outstanding=5000000 from v_sales_invoice_open where invoice_id='$OLD_ID') and public.account_balance('131')=5000000")"
+chk "đối chiếu sổ phụ = sổ cái, mọi chênh lệch = 0" "$(V "select bool_and(diff=0) from accounting_reconciliation()")"
+step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"
 echo; [ $fail = 0 ] && echo "E2E RESULT: PASS" || echo "E2E RESULT: FAIL"; exit $fail
