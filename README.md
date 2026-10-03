@@ -188,7 +188,7 @@ CI (`.github/workflows/ci.yml`): job `web`, `bot` (chặn khi audit lỗi), job 
 - **Bảo trì** — Hợp đồng bảo trì DN, ticket workflow (tiếp nhận → phân công → xử lý → chờ ký → ký → đóng), **ký online** trên web (canvas signature pad), báo cáo tháng.
 - **Dashboard** — Tổng quan: tổng SP, sắp hết hàng, khách DN, ticket mở, BG chờ duyệt, doanh thu tháng, activity gần nhất.
 - **Báo cáo** — Doanh thu + lãi gộp 12 tháng (từ sổ cái, giờ Việt Nam), top 10 SP/khách (gộp trong SQL), báo cáo kế toán (`/reports/accounting`), báo cáo bảo trì tháng (`/maintenance/reports`).
-- **Telegram Bot** — 8 lệnh chủ shop (`/ton`, `/nhap`, `/ban`, `/khach`, `/baotri`, `/doanhthu`, `/top`, `/start`) + 3 lệnh khách DN (`/hopdong`, `/yeucaubt`, `/ticket`). `/nhap` gọi `stock_adjust`, `/ban` ghi **hóa đơn** qua `post_sales_invoice` (VAT 0%, hạn 7 ngày), `/doanhthu` và `/top` đọc từ sổ cái. Hỗ trợ tên có dấu cách: `/ban "Nguyen Van A" HP-1234 2`.
+- **Telegram Bot** — 8 lệnh chủ shop (`/ton`, `/nhap`, `/ban`, `/khach`, `/baotri`, `/doanhthu`, `/top`, `/start`) + 3 lệnh khách DN (`/hopdong`, `/yeucaubt`, `/ticket`). `/nhap` gọi `stock_adjust`, `/doanhthu` và `/top` đọc từ sổ cái. `/ban` (hộ kinh doanh, **giá đã gồm VAT**): ghi hóa đơn qua `post_sales_invoice` với **VAT 0%** (đơn giá = giá bán, tổng = giá × SL, hạn thanh toán = ngày bán) rồi **thu tiền mặt ngay** (TK 111) qua `post_receipt`, phân bổ vào đúng hóa đơn đó — công nợ phải thu của lần bán này = 0. Nếu thu tiền lỗi, bot tự đảo hóa đơn. Tên khách trùng nhiều người → bot hỏi lại, chưa ghi gì. Hỗ trợ tên có dấu cách: `/ban "Nguyen Van A" HP-1234 2`.
 
 ---
 

@@ -60,22 +60,74 @@ describe("owner flows", () => {
     expect(out[0]).not.toContain("secret_internal_name");
   });
 
-  it('/ban "Nguyen Van A" posts a sales invoice through post_sales_invoice (no direct stock or quotation writes)', async () => {
+  const BAN_TABLES = () => ({
+    customers: { data: [{ id: "c1", name: "Nguyen Van A", phone: "0901" }], error: null },
+    products: { data: [{ id: "p1", name: "Chuột", sell_price: 250000, stock_qty: 10 }], error: null },
+  });
+  const INV_OK = { data: { invoice_id: "i1", invoice_no: "INV-2026-00001", total: 500000 }, error: null };
+
+  it('/ban "Nguyen Van A" books a PAID sale: invoice (VAT 0%, due = sale date) + cash receipt allocated to that invoice', async () => {
     fake = makeFakeSupabase({
-      tables: {
-        customers: { data: [{ id: "c1", name: "Nguyen Van A", phone: "0901" }], error: null },
-        products: { data: [{ id: "p1", name: "Chuột", sell_price: 250000, stock_qty: 10 }], error: null },
-      },
-      rpcs: { post_sales_invoice: { data: { invoice_id: "i1", invoice_no: "INV-2026-00001", total: 500000 }, error: null } },
+      tables: BAN_TABLES(),
+      rpcs: { post_sales_invoice: INV_OK, post_receipt: { data: { payment_id: "pay1", payment_no: "RC-2026-00001", amount: 500000, allocated: 500000, unapplied: 0 }, error: null } },
     });
     const out = texts(await run('/ban "Nguyen Van A" HP-1234 2', 1, OWNER));
-    const call = fake.rpcCalls[0];
-    expect(call.fn).toBe("post_sales_invoice");
-    expect(call.args).toMatchObject({ p_customer_id: "c1", p_lines: [{ product_id: "p1", qty: 2, unit_price: 250000, vat_rate: 0 }] });
-    expect(String(call.args.p_invoice_date)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(String(call.args.p_due_date) >= String(call.args.p_invoice_date)).toBe(true);
+    expect(fake.rpcCalls.map((c) => c.fn)).toEqual(["post_sales_invoice", "post_receipt"]);
+    const [inv, rc] = fake.rpcCalls;
+    // prices are VAT-inclusive: VAT 0%, unit_price = sell_price, total = price x qty
+    expect(inv.args).toMatchObject({ p_customer_id: "c1", p_lines: [{ product_id: "p1", qty: 2, unit_price: 250000, vat_rate: 0 }], p_allow_over_limit: true });
+    expect(String(inv.args.p_invoice_date)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(inv.args.p_due_date).toBe(inv.args.p_invoice_date); // paid immediately: no 7-day due date
+    // receipt: cash (account 111), full invoice total, allocated to THIS invoice (not FIFO), same day
+    expect(rc.args).toMatchObject({ p_customer_id: "c1", p_amount: 500000, p_method: "cash", p_date: inv.args.p_invoice_date, p_allocations: [{ invoice_id: "i1", amount: 500000 }] });
+    expect(fake.rpcCalls.some((c) => c.fn === "post_receipt_fifo")).toBe(false);
     expect(fake.writes()).toEqual([]);
+    expect(out).toHaveLength(1);
     expect(out[0]).toContain("INV-2026-00001");
+    expect(out[0]).toContain("RC-2026-00001");
+    expect(out[0]).toContain("đã thu đủ tiền mặt");
+    expect(out[0]).toContain("VAT 0%");
+    expect(out[0]).not.toContain("Hạn thanh toán");
+    expect(out[0]).toContain("Công nợ lần bán này: 0");
+  });
+
+  it("/ban reverses the invoice when the receipt fails, so no receivable is left open", async () => {
+    fake = makeFakeSupabase({
+      tables: BAN_TABLES(),
+      rpcs: {
+        post_sales_invoice: INV_OK,
+        post_receipt: { data: null, error: { message: "period_closed" } },
+        reverse_sales_invoice: { data: { invoice_id: "i1", reversal_entry_id: "e2" }, error: null },
+      },
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const out = texts(await run("/ban A HP-1 2", 1, OWNER));
+    expect(fake.rpcCalls.map((c) => c.fn)).toEqual(["post_sales_invoice", "post_receipt", "reverse_sales_invoice"]);
+    expect(fake.rpcCalls[2].args).toMatchObject({ p_invoice_id: "i1" });
+    expect(out[0]).toContain("tự đảo hóa đơn");
+    expect(out[0]).not.toContain("period_closed");
+  });
+
+  it("/ban warns loudly when both the receipt and the automatic reversal fail", async () => {
+    fake = makeFakeSupabase({
+      tables: BAN_TABLES(),
+      rpcs: {
+        post_sales_invoice: INV_OK,
+        post_receipt: { data: null, error: { message: "boom" } },
+        reverse_sales_invoice: { data: null, error: { message: "boom2" } },
+      },
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const out = texts(await run("/ban A HP-1 2", 1, OWNER));
+    expect(out[0]).toContain("KHÔNG thu được tiền");
+    expect(out[0]).toContain("INV-2026-00001");
+  });
+
+  it("/ban does not post anything when the invoice RPC fails (no receipt attempt)", async () => {
+    fake = makeFakeSupabase({ tables: BAN_TABLES(), rpcs: { post_sales_invoice: { data: null, error: { message: "period_closed" } } } });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await run("/ban A HP-1 2", 1, OWNER);
+    expect(fake.rpcCalls.map((c) => c.fn)).toEqual(["post_sales_invoice"]);
   });
 
   it("/ban sanitises the customer keyword before building the PostgREST .or() filter", async () => {
@@ -90,7 +142,9 @@ describe("owner flows", () => {
     fake = makeFakeSupabase({ tables: { customers: { data: [{ id: "1", name: "Lan A", phone: "1" }, { id: "2", name: "Lan B", phone: "2" }], error: null } } });
     const out = texts(await run("/ban Lan HP-1 1", 1, OWNER));
     expect(out[0]).toContain("nhiều khách");
-    expect(fake.rpcCalls).toHaveLength(0);
+    expect(out[0]).toContain("Lan A");
+    expect(out[0]).toContain("Lan B");
+    expect(fake.rpcCalls).toHaveLength(0); // nothing is booked (no invoice, no receipt) until the owner disambiguates
   });
 
   it("/ban reports insufficient stock from the RPC", async () => {
