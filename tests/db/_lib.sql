@@ -54,3 +54,10 @@ begin
   if st = 'awaiting_signature' then update public.maintenance_tickets set status = 'awaiting_signature' where id = t; end if;
   return t;
 end $f$;
+
+create or replace function pg_temp.mk_supplier() returns uuid language sql as $f$
+  insert into public.suppliers(name) values ('NCC ' || gen_random_uuid()) returning id $f$;
+create or replace function pg_temp.mk_product(p_cost numeric default 0, p_qty int default 0) returns uuid language sql as $f$
+  insert into public.products(sku, name, cost_price, stock_qty) values ('P-' || substr(gen_random_uuid()::text,1,8), 'Prod', p_cost, p_qty) returning id $f$;
+create or replace function pg_temp.bal(code text) returns numeric language sql as $f$ select public.account_balance(code) $f$;
+create or replace function pg_temp.ok(b boolean) returns text language sql as $f$ select case when b then 'OK' else 'FAIL' end $f$;
