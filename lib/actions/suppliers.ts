@@ -3,6 +3,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { formDataToObject, type ActionResult } from "@/lib/actions/_shared";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const supplierSchema = z.object({
@@ -26,21 +27,10 @@ const debtLineSchema = z.object({
 
 export type DebtLineInput = z.infer<typeof debtLineSchema>;
 
-export type ActionResult<T = unknown> =
-  | { ok: true; data: T }
-  | { ok: false; error: string };
-
-function emptyToNull(v: unknown): unknown {
-  if (typeof v === "string" && v.trim() === "") return null;
-  return v;
-}
+export type { ActionResult };
 
 function cleanInput(formData: FormData): Record<string, unknown> {
-  const obj: Record<string, unknown> = {};
-  for (const [k, v] of formData.entries()) {
-    obj[k] = emptyToNull(v);
-  }
-  return obj;
+  return formDataToObject(formData, []);
 }
 
 export async function createSupplier(

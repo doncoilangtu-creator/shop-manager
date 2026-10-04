@@ -5,6 +5,7 @@ import { stockErrorMessage } from "./stock-errors";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { formDataToObject, type ActionResult } from "@/lib/actions/_shared";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const productSchema = z.object({
@@ -26,24 +27,10 @@ const productSchema = z.object({
 
 export type ProductInput = z.infer<typeof productSchema>;
 
-export type ActionResult<T = unknown> =
-  | { ok: true; data: T }
-  | { ok: false; error: string };
-
-function emptyToNull(v: unknown): unknown {
-  if (typeof v === "string" && v.trim() === "") return null;
-  return v;
-}
+export type { ActionResult };
 
 function cleanInput(formData: FormData): Record<string, unknown> {
-  const obj: Record<string, unknown> = {};
-  for (const [k, v] of formData.entries()) {
-    obj[k] = emptyToNull(v);
-  }
-  // Handle image_urls (multi-value)
-  const urls = formData.getAll("image_urls").filter((v) => typeof v === "string" && v.trim() !== "");
-  if (urls.length) obj.image_urls = urls;
-  return obj;
+  return formDataToObject(formData, ["image_urls"]);
 }
 
 export async function createProduct(formData: FormData): Promise<ActionResult<{ id: string }>> {

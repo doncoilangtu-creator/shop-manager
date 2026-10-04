@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { statusVariant, priorityVariant } from "@/lib/maintenance";
+import { vnDate, vnMonthRange, vnParts } from "@/lib/time";
+import { formatDate } from "@/lib/utils";
 import type { TicketStatus, TicketPriority } from "@/types/db";
 
 interface SearchParams {
@@ -38,8 +40,8 @@ function parseMonth(s?: string): { year: number; month: number } {
     const [y, m] = s.split("-").map(Number);
     return { year: y, month: m };
   }
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  const now = vnParts();
+  return { year: now.year, month: now.month };
 }
 
 function pad(n: number) {
@@ -57,8 +59,7 @@ export default async function CalendarPage(
   const startWeekday = first.getDay(); // 0=Sun
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  const monthStart = new Date(year, month - 1, 1);
-  const monthEnd = new Date(year, month, 0, 23, 59, 59);
+  const range = vnMonthRange(year, month);
 
   const supabase = await createClient();
   const { data: rows } = await supabase
@@ -67,8 +68,8 @@ export default async function CalendarPage(
       "id, code, title, status, priority, started_at, customers(name)",
     )
     .not("started_at", "is", null)
-    .gte("started_at", monthStart.toISOString())
-    .lte("started_at", monthEnd.toISOString())
+    .gte("started_at", range.from)
+    .lt("started_at", range.to)
     .order("started_at", { ascending: true })
     .limit(500);
 
@@ -76,8 +77,7 @@ export default async function CalendarPage(
   const byDay = new Map<string, NonNullable<typeof rows>>();
   for (const t of rows ?? []) {
     if (!t.started_at) continue;
-    const d = new Date(t.started_at);
-    const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const key = vnDate(t.started_at);
     const list = byDay.get(key) ?? [];
     list.push(t);
     byDay.set(key, list);
@@ -146,7 +146,7 @@ export default async function CalendarPage(
               const key = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
               const items = byDay.get(key) ?? [];
               const isToday =
-                date.toDateString() === new Date().toDateString();
+                key === vnDate();
               return (
                 <div
                   key={i}
@@ -234,7 +234,7 @@ export default async function CalendarPage(
                     <span className="text-xs text-muted-foreground">
                       {cust?.name ?? "—"} ·{" "}
                       {t.started_at
-                        ? new Date(t.started_at).toLocaleDateString("vi-VN")
+                        ? formatDate(t.started_at)
                         : ""}
                     </span>
                   </li>

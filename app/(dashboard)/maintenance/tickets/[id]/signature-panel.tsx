@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { issueSignatureTokenAction } from "@/app/(dashboard)/maintenance/actions";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import type { SignerRole, TicketStatus } from "@/types/db";
 
 interface SignatureRow {
@@ -167,7 +167,7 @@ export function SignaturePanel({
                       <>
                         <p className="text-sm font-medium">{sig.signer_name}</p>
                         <p className="text-[10px] text-muted-foreground">
-                          {new Date(sig.signed_at).toLocaleString("vi-VN")}
+                          {formatDateTime(sig.signed_at)}
                         </p>
                       </>
                     ) : (
