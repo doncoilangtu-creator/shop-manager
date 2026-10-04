@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
 import { formatVND } from "@/lib/utils";
+import { ilikeOr } from "@/lib/search";
 import { CustomersFilterBar } from "./filter-bar";
 import { DeleteCustomerButton } from "./delete-button";
 
@@ -46,10 +47,8 @@ export default async function CustomersPage(props: PageProps) {
     .range(0, PAGE_SIZE - 1);
 
   if (q) {
-    const esc = q.replace(/[%,()]/g, "");
-    query = query.or(
-      `name.ilike.%${esc}%,phone.ilike.%${esc}%,tax_code.ilike.%${esc}%`,
-    );
+    const orFilter = ilikeOr(["name", "phone", "tax_code"], q);
+    if (orFilter) query = query.or(orFilter);
   }
   if (type === "retail" || type === "business") {
     query = query.eq("type", type);

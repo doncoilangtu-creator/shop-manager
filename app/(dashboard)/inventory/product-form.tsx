@@ -243,8 +243,19 @@ export function ProductForm({ mode, categories, initial, productId }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="stock_qty">Tồn kho</Label>
-            <Input id="stock_qty" type="number" min={0} {...register("stock_qty")} />
+            <Label htmlFor="stock_qty">{mode === "create" ? "Tồn đầu kỳ" : "Tồn kho (chỉ xem)"}</Label>
+            <Input
+              id="stock_qty"
+              type="number"
+              min={0}
+              disabled={mode === "edit"}
+              {...register("stock_qty")}
+            />
+            {mode === "edit" && (
+              <p className="text-xs text-muted-foreground">
+                Đổi tồn bằng &quot;Kiểm kê&quot; hoặc &quot;Nhập kho&quot; để mọi thay đổi có phiếu kho.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="min_stock">Tồn tối thiểu</Label>
