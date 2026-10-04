@@ -1,11 +1,11 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/require-user";
+import { stockErrorMessage } from "./stock-errors";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 const productSchema = z.object({
   sku: z.string().min(1, "SKU bắt buộc").max(100),
@@ -126,7 +126,6 @@ export async function updateProduct(
       unit: parsed.data.unit,
       cost_price: parsed.data.cost_price,
       sell_price: parsed.data.sell_price,
-      stock_qty: parsed.data.stock_qty,
       min_stock: parsed.data.min_stock,
       location: parsed.data.location ?? null,
       warranty_months: parsed.data.warranty_months,
@@ -136,6 +135,21 @@ export async function updateProduct(
     .eq("id", id);
 
   if (error) return { ok: false, error: error.message };
+
+  // products.stock_qty is a cache of the stock ledger (migration 0003): a changed
+  // quantity in the edit form is recorded as an explicit 'adjust' movement.
+  const { data: cur } = await supabase.from("products").select("stock_qty").eq("id", id).single();
+  const delta = parsed.data.stock_qty - (cur?.stock_qty ?? 0);
+  if (delta !== 0) {
+    const { error: adjErr } = await auth.supabase.rpc("stock_adjust", {
+      p_product_id: id,
+      p_type: "adjust",
+      p_qty: delta,
+      p_ref_type: "edit",
+      p_notes: "Điều chỉnh tồn từ form sửa sản phẩm",
+    });
+    if (adjErr) return { ok: false, error: stockErrorMessage(adjErr.message) };
+  }
   revalidatePath("/inventory");
   revalidatePath(`/inventory/${id}`);
   return { ok: true, data: { id } };
@@ -180,48 +194,15 @@ export async function stockIn(formData: FormData): Promise<ActionResult<null>> {
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
   }
-  const supabase = createAdminClient();
-  const supabaseUser = await createClient();
-  const {
-    data: { user },
-  } = await supabaseUser.auth.getUser();
-
-  // Read current stock
-  const { data: product, error: prodErr } = await supabase
-    .from("products")
-    .select("id, stock_qty, sku")
-    .eq("id", parsed.data.product_id)
-    .single();
-  if (prodErr || !product) return { ok: false, error: "Không tìm thấy sản phẩm" };
-
-  const newQty = (product.stock_qty ?? 0) + parsed.data.qty;
-
-  // Update product stock
-  const { error: updErr } = await supabase
-    .from("products")
-    .update({ stock_qty: newQty, updated_at: new Date().toISOString() })
-    .eq("id", parsed.data.product_id);
-  if (updErr) return { ok: false, error: updErr.message };
-
-  // Insert movement log
-  const { error: movErr } = await supabase.from("stock_movements").insert({
-    product_id: parsed.data.product_id,
-    type: "in",
-    qty: parsed.data.qty,
-    unit_cost: parsed.data.unit_cost,
-    ref_type: "manual",
-    ref_id: null,
-    notes: parsed.data.notes ?? `Nhập kho nhanh ${parsed.data.qty} ${product.sku}`,
-    created_by: user?.id ?? null,
+  const { error } = await auth.supabase.rpc("stock_adjust", {
+    p_product_id: parsed.data.product_id,
+    p_type: "in",
+    p_qty: parsed.data.qty,
+    p_unit_cost: parsed.data.unit_cost,
+    p_ref_type: "manual",
+    p_notes: parsed.data.notes ?? `Nhập kho nhanh ${parsed.data.qty}`,
   });
-  if (movErr) {
-    // Compensate: roll back the stock update
-    await supabase
-      .from("products")
-      .update({ stock_qty: product.stock_qty, updated_at: new Date().toISOString() })
-      .eq("id", parsed.data.product_id);
-    return { ok: false, error: movErr.message };
-  }
+  if (error) return { ok: false, error: stockErrorMessage(error.message) };
 
   revalidatePath("/inventory");
   return { ok: true, data: null };
