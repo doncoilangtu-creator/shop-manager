@@ -3,7 +3,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { formDataToObject, type ActionResult } from "@/lib/actions/_shared";
+import { formDataToObject, pgErrorMessage, type ActionResult } from "@/lib/actions/_shared";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const supplierSchema = z.object({
@@ -151,8 +151,24 @@ export async function deleteSupplier(id: string): Promise<ActionResult<null>> {
   const auth = await requireUser();
   if (!auth.ok) return auth;
   const supabase = createAdminClient();
+
+  // A supplier with accounting history (purchase bills / payments) must be kept for the books.
+  const [bills, pays, debts] = await Promise.all([
+    supabase.from("purchase_bills").select("id").eq("supplier_id", id).limit(1),
+    supabase.from("payments").select("id").eq("supplier_id", id).limit(1),
+    supabase.from("supplier_debts").select("id").eq("supplier_id", id).eq("paid", false).limit(1),
+  ]);
+  const failed = [bills, pays, debts].find((r) => r.error);
+  if (failed?.error) return { ok: false, error: pgErrorMessage(failed.error) };
+  if ((bills.data?.length ?? 0) > 0 || (pays.data?.length ?? 0) > 0) {
+    return { ok: false, error: "Không thể xóa: nhà cung cấp đã có phiếu nhập/chi tiền trong sổ kế toán." };
+  }
+  if ((debts.data?.length ?? 0) > 0) {
+    return { ok: false, error: "Không thể xóa: nhà cung cấp còn công nợ chưa trả." };
+  }
+
   const { error } = await supabase.from("suppliers").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: pgErrorMessage(error) };
   revalidatePath("/suppliers");
   return { ok: true, data: null };
 }
