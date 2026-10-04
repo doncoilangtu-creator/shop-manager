@@ -3,12 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { SignForm } from "./sign-form";
 
 interface PageProps {
-  params: { token: string };
+  params: Promise<{ token: string }>;
 }
 
-export default async function SignPage({ params }: PageProps) {
+export default async function SignPage(props: PageProps) {
+  const params = await props.params;
   const { token } = params;
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: row, error } = await supabase
     .from("signature_tokens")

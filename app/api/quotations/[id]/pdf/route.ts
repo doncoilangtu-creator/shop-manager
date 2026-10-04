@@ -1,3 +1,4 @@
+import type { DocumentProps } from "@react-pdf/renderer";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { QuotationPdfDocument } from "@/lib/quotations/pdf-template";
@@ -47,16 +48,14 @@ interface QuotationDetail {
  *
  * Auth: requires an authenticated session.
  */
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const id = params.id;
   if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
     return NextResponse.json({ error: "ID không hợp lệ" }, { status: 400 });
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -146,7 +145,7 @@ export async function GET(
 
   let pdfBuffer: Buffer;
   try {
-    pdfBuffer = await renderToBuffer(doc as React.ReactElement);
+    pdfBuffer = await renderToBuffer(doc as React.ReactElement<DocumentProps>);
   } catch (e) {
     console.error("PDF render failed:", e);
     return NextResponse.json(

@@ -46,11 +46,12 @@ function pad(n: number) {
   return n.toString().padStart(2, "0");
 }
 
-export default async function CalendarPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+export default async function CalendarPage(
+  props: {
+    searchParams: Promise<SearchParams>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const { year, month } = parseMonth(searchParams.month);
   const first = new Date(year, month - 1, 1);
   const startWeekday = first.getDay(); // 0=Sun
@@ -59,7 +60,7 @@ export default async function CalendarPage({
   const monthStart = new Date(year, month - 1, 1);
   const monthEnd = new Date(year, month, 0, 23, 59, 59);
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: rows } = await supabase
     .from("maintenance_tickets")
     .select(

@@ -29,7 +29,7 @@ import { CustomerForm } from "../customer-form";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 const QUOTATION_STATUS_LABELS: Record<string, string> = {
@@ -50,8 +50,9 @@ const TICKET_STATUS_LABELS: Record<string, string> = {
   closed: "Đóng",
 };
 
-export default async function CustomerDetailPage({ params }: PageProps) {
-  const supabase = createClient();
+export default async function CustomerDetailPage(props: PageProps) {
+  const params = await props.params;
+  const supabase = await createClient();
 
   const [
     { data: customer, error },
