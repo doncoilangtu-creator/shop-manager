@@ -23,11 +23,11 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="rounded bg-muted p-4 font-mono text-xs">
-            <div>NEXT_PUBLIC_SHOP_NAME=&quot;Tên shop của anh&quot;</div>
-            <div>NEXT_PUBLIC_SHOP_TAX_CODE=&quot;MST&quot;</div>
-            <div>NEXT_PUBLIC_SHOP_ADDRESS=&quot;Địa chỉ&quot;</div>
-            <div>NEXT_PUBLIC_SHOP_PHONE=&quot;SĐT&quot;</div>
-            <div>NEXT_PUBLIC_SHOP_EMAIL=&quot;email@shop.vn&quot;</div>
+            <div>SHOP_NAME=&quot;Tên shop của anh&quot;</div>
+            <div>SHOP_TAX_CODE=&quot;MST&quot;</div>
+            <div>SHOP_ADDRESS=&quot;Địa chỉ&quot;</div>
+            <div>SHOP_PHONE=&quot;SĐT&quot;</div>
+            <div>SHOP_EMAIL=&quot;email@shop.vn&quot;</div>
           </div>
           <p className="mt-3 text-muted-foreground">
             Restart server (<code className="rounded bg-muted px-1">npm run dev</code>) sau khi đổi env để áp dụng.

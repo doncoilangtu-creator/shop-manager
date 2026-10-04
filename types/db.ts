@@ -100,7 +100,8 @@ export interface Quotation {
   discount: number;
   vat: number;
   total: number;
-  pdf_url: string | null;
+  pdf_url: string | null; // legacy (public URL); new PDFs use pdf_path in the private bucket
+  pdf_path: string | null;
   created_at: ISODate;
   updated_at: ISODate;
 }
