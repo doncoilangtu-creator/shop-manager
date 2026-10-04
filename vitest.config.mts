@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 // vitest config in bot/ (separate package.json / lockfile).
 export default defineConfig({
   resolve: {
-    alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL(".", import.meta.url)),
+      // `server-only` throws outside the React server graph; stub it for unit tests.
+      "server-only": fileURLToPath(new URL("./tests/web/stubs/server-only.ts", import.meta.url)),
+    },
   },
   test: {
     environment: "node",

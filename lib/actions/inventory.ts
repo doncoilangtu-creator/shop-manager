@@ -1,5 +1,6 @@
 "use server";
 
+import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -46,6 +47,8 @@ function cleanInput(formData: FormData): Record<string, unknown> {
 }
 
 export async function createProduct(formData: FormData): Promise<ActionResult<{ id: string }>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = productSchema.safeParse(cleanInput(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
@@ -92,6 +95,8 @@ export async function updateProduct(
   id: string,
   formData: FormData,
 ): Promise<ActionResult<{ id: string }>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = productSchema.safeParse(cleanInput(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
@@ -137,6 +142,8 @@ export async function updateProduct(
 }
 
 export async function deleteProduct(id: string): Promise<ActionResult<null>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = createAdminClient();
 
   // Check if referenced in quotation_items
@@ -167,6 +174,8 @@ const stockInSchema = z.object({
 });
 
 export async function stockIn(formData: FormData): Promise<ActionResult<null>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = stockInSchema.safeParse(cleanInput(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };

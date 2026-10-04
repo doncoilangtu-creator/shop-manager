@@ -1,5 +1,6 @@
 "use server";
 
+import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -41,6 +42,8 @@ function cleanInput(formData: FormData): Record<string, unknown> {
 export async function createCustomer(
   formData: FormData,
 ): Promise<ActionResult<{ id: string }>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = customerSchema.safeParse(cleanInput(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
@@ -74,6 +77,8 @@ export async function updateCustomer(
   id: string,
   formData: FormData,
 ): Promise<ActionResult<{ id: string }>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = customerSchema.safeParse(cleanInput(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
@@ -105,6 +110,8 @@ export async function updateCustomer(
 }
 
 export async function deleteCustomer(id: string): Promise<ActionResult<null>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = createAdminClient();
 
   // Check references

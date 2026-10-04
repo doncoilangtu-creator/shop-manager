@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 // Smoke/characterization test of the current auth middleware behaviour.
-// NOTE: `/api/*` being public is the *current* behaviour (see refactor plan
-// F1/C1); cluster C1 is expected to tighten it and update this test.
+// C1: only /login, /sign/* and /api/sign/* are public; other /api/* → 401 JSON.
 const getUser = vi.fn();
 vi.mock("@supabase/ssr", () => ({
   createServerClient: () => ({ auth: { getUser } }),
@@ -42,14 +41,30 @@ describe("middleware (unauthenticated)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("currently lets /api/* through (to be tightened in C1)", async () => {
-    const res = await middleware(req("/api/sign/abc"));
-    expect(res.headers.get("location")).toBeNull();
+  it("lets the public signing API through", async () => {
+    for (const p of ["/api/sign/abc", "/api/sign/abc/"]) {
+      const res = await middleware(req(p));
+      expect(res.status, p).toBe(200);
+    }
   });
+
+  it.each(["/api/quotations/x/pdf", "/api/other", "/api/signature", "/api/signx/abc", "/api"])(
+    "answers 401 JSON (not a redirect) for %s",
+    async (p) => {
+      const res = await middleware(req(p));
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: "Unauthorized" });
+    },
+  );
 });
 
 describe("middleware (authenticated)", () => {
   beforeEach(loggedIn);
+
+  it("serves protected API routes to a logged-in user", async () => {
+    const res = await middleware(req("/api/quotations/x/pdf"));
+    expect(res.status).toBe(200);
+  });
 
   it("serves protected pages", async () => {
     const res = await middleware(req("/inventory"));

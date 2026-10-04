@@ -45,11 +45,17 @@ export async function middleware(request: NextRequest) {
   // Public routes that don't require auth
   const isPublicAuthRoute = path.startsWith("/login") || path.startsWith("/auth");
   const isSignRoute = path.startsWith("/sign/");
-  const isApiRoute = path.startsWith("/api/");
+  // Only the public signing endpoint is open; every other /api/* needs a session.
+  const isPublicApi = path === "/api/sign" || path.startsWith("/api/sign/");
+  const isApiRoute = path === "/api" || path.startsWith("/api/");
   const isPublicAsset =
     path.startsWith("/_next") ||
     path === "/favicon.ico" ||
     path.match(/\.(svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$/);
+
+  if (!user && isApiRoute && !isPublicApi) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   if (!user && !isPublicAuthRoute && !isSignRoute && !isApiRoute && !isPublicAsset) {
     const url = request.nextUrl.clone();

@@ -1,5 +1,6 @@
 "use server";
 
+import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -30,6 +31,8 @@ function generateContractCode(): string {
 }
 
 export async function createContractAction(formData: FormData) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = ContractSchema.safeParse({
     customer_id: formData.get("customer_id"),
     code: formData.get("code") || undefined,
@@ -60,6 +63,8 @@ export async function createContractAction(formData: FormData) {
 }
 
 export async function updateContractAction(id: string, formData: FormData) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = ContractSchema.partial().safeParse({
     customer_id: formData.get("customer_id"),
     start_date: formData.get("start_date"),
@@ -85,6 +90,8 @@ export async function updateContractAction(id: string, formData: FormData) {
 }
 
 export async function deleteContractAction(id: string) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const admin = createAdminClient();
   const { error } = await admin.from("maintenance_contracts").delete().eq("id", id);
   if (error) return { ok: false as const, error: error.message };
@@ -111,6 +118,8 @@ function generateTicketCode(): string {
 }
 
 export async function createTicketAction(formData: FormData) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = TicketSchema.safeParse({
     customer_id: formData.get("customer_id"),
     contract_id: formData.get("contract_id") || null,
@@ -169,6 +178,8 @@ const TICKET_STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 export async function updateTicketStatusAction(id: string, newStatus: string) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const admin = createAdminClient();
   const { data: ticket } = await admin
     .from("maintenance_tickets")
@@ -209,6 +220,8 @@ const LogSchema = z.object({
 });
 
 export async function addMaintenanceLogAction(formData: FormData) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const partsRaw = formData.get("parts_used");
   const parts = partsRaw
     ? (partsRaw as string).split(",").map((s) => s.trim()).filter(Boolean)
@@ -243,6 +256,8 @@ export async function addMaintenanceLogAction(formData: FormData) {
 // ============================================================
 
 export async function issueSignatureTokenAction(ticketId: string) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const admin = createAdminClient();
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();

@@ -1,5 +1,6 @@
 "use server";
 
+import { requireUser } from "@/lib/auth/require-user";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -45,6 +46,8 @@ function cleanInput(formData: FormData): Record<string, unknown> {
 export async function createSupplier(
   formData: FormData,
 ): Promise<ActionResult<{ id: string }>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = supplierSchema.safeParse(cleanInput(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
@@ -101,6 +104,8 @@ export async function updateSupplier(
   id: string,
   formData: FormData,
 ): Promise<ActionResult<{ id: string }>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const parsed = supplierSchema.safeParse(cleanInput(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
@@ -153,6 +158,8 @@ export async function updateSupplier(
 }
 
 export async function deleteSupplier(id: string): Promise<ActionResult<null>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = createAdminClient();
   const { error } = await supabase.from("suppliers").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -164,6 +171,8 @@ export async function toggleSupplierDebtPaid(
   debtId: string,
   paid: boolean,
 ): Promise<ActionResult<null>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("supplier_debts")
@@ -181,6 +190,8 @@ export async function toggleSupplierDebtPaid(
 }
 
 export async function deleteSupplierDebt(debtId: string): Promise<ActionResult<null>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("supplier_debts")

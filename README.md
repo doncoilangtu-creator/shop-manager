@@ -55,7 +55,7 @@ shop-manager/
 │   ├── migrations/0001_init.sql # schema 16 bảng
 │   └── seed.sql                 # dữ liệu mẫu
 ├── middleware.ts                # bảo vệ route + refresh session
-├── instrumentation.ts           # chạy bootstrapAdmin khi server start
+├── scripts/bootstrap-admin.ts   # chạy tay 1 lần: npm run bootstrap-admin
 ├── .env.example
 └── README.md
 ```
@@ -113,7 +113,7 @@ Mở [http://localhost:3000](http://localhost:3000) → sẽ redirect sang `/log
 - Email: `admin@shop.local`
 - Mật khẩu: giá trị `INITIAL_ADMIN_PASSWORD` bạn đặt ở bước 3.
 
-> User này được tự động tạo khi server khởi động lần đầu (xem `instrumentation.ts`). Nếu chưa có, server sẽ in log `[bootstrap] ✓ Admin user created`. Idempotent — nếu user đã tồn tại thì bỏ qua.
+> Tạo user admin bằng lệnh chạy tay một lần: `npm run bootstrap-admin` (cần `SUPABASE_SERVICE_ROLE_KEY`, `INITIAL_ADMIN_PASSWORD` ≥12 ký tự, không phải mật khẩu mẫu; email tuỳ chọn qua `INITIAL_ADMIN_EMAIL`). Idempotent. (Không còn chạy mỗi lần server khởi động.)
 
 ---
 
@@ -309,7 +309,7 @@ shop-manager/
    - `signatures` (anon insert khi khách ký).
 3. **Public route `/sign/[token]`.** Middleware Next.js cho phép đi qua không cần đăng nhập; API `/api/sign/[token]` cũng vậy.
 4. **shadcn/ui cài thủ công.** Chỉ 8 component (button, card, input, label, separator, badge, table, dropdown-menu, avatar, skeleton) — không dùng `shadcn-ui` CLI để giữ repo gọn.
-5. **Bootstrap admin tự động.** `instrumentation.ts` chạy `bootstrapAdmin()` khi server start; idempotent.
+5. **Bootstrap admin chạy tay.** `npm run bootstrap-admin` (idempotent), không chạy ở cold start.
 6. **Signature pad không dùng lib ngoài.** HTML `<canvas>` + Pointer Events — đủ dùng cho ký chữ, gọn, không cần thêm dependency.
 
 ---

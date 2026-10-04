@@ -1,6 +1,6 @@
 import type { DocumentProps } from "@react-pdf/renderer";
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/require-user";
 import { QuotationPdfDocument } from "@/lib/quotations/pdf-template";
 import { uploadQuotationPdf } from "@/lib/quotations/storage";
 import { saveQuotationPdfUrlAction } from "@/lib/quotations/actions";
@@ -55,13 +55,11 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     return NextResponse.json({ error: "ID không hợp lệ" }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const auth = await requireUser();
+  if (!auth.ok) {
     return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   }
+  const supabase = auth.supabase;
 
   // Load quotation + items + customer
   const { data: header, error: hErr } = await supabase
