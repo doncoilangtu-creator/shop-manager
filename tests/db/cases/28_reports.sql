@@ -48,6 +48,9 @@ begin
   perform pg_temp.rec('RPT-dashboard-non-staff', 'control', pg_temp.ok(e = 'forbidden'), e);
   e := pg_temp.try('select * from public.report_top_products(''2031-01-01'', ''2031-12-31'', 5)');
   perform pg_temp.rec('RPT-top-products-non-staff', 'control', pg_temp.ok(e = 'forbidden'), e);
+  perform pg_temp.act_as('service_role');
+  e := pg_temp.try('select count(*) from public.report_top_products(''2031-01-01'', ''2031-12-31'', 5)');
+  perform pg_temp.rec('RPT-service-role-bot', 'control', pg_temp.ok(e = 'OK' or e ~ '^[0-9]+$' or e is null), 'service_role (Telegram bot) can run report RPCs: ' || coalesce(e, 'null'));
   perform pg_temp.act_as('anon');
   e := pg_temp.try('select public.report_dashboard()');
   reset role;

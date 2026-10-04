@@ -87,27 +87,23 @@ describe("owner commands: authorization", () => {
 });
 
 describe("owner commands: behaviour", () => {
-  it("/ton lists only products at or below min stock", async () => {
+  it("/ton reads the low_stock_products view and HTML-escapes names", async () => {
     authenticateOwner.mockResolvedValue({ role: "owner" });
-    const { q } = makeQuery({
-      data: [
-        { sku: "A", name: "Low", stock_qty: 1, min_stock: 5 },
-        { sku: "B", name: "Fine", stock_qty: 50, min_stock: 5 },
-      ],
-      error: null,
-    });
-    getSupabase.mockReturnValue({ from: () => q });
+    const { q, calls } = makeQuery({ data: [{ sku: "A", name: "Low <b>x</b>", stock_qty: 1, min_stock: 5 }], error: null });
+    const from = vi.fn(() => q);
+    getSupabase.mockReturnValue({ from });
     const { bot, handlers } = makeFakeBot();
     registerOwnerCommands(bot);
     const { ctx, replies } = makeCtx({ chatId: 1, text: "/ton" });
     await handlers.get("ton")!(ctx);
-    expect(replies[0].text).toContain("Low");
-    expect(replies[0].text).not.toContain("Fine");
+    expect(from).toHaveBeenCalledWith("low_stock_products");
+    expect(calls.some((c) => c.method === "filter")).toBe(false);
+    expect(replies[0].text).toContain("Low &lt;b&gt;x&lt;/b&gt;");
   });
 
-  it("/ton reports when everything is stocked", async () => {
+  it("/ton reports when the view is empty", async () => {
     authenticateOwner.mockResolvedValue({ role: "owner" });
-    const { q } = makeQuery({ data: [{ sku: "B", name: "Fine", stock_qty: 50, min_stock: 5 }], error: null });
+    const { q } = makeQuery({ data: [], error: null });
     getSupabase.mockReturnValue({ from: () => q });
     const { bot, handlers } = makeFakeBot();
     registerOwnerCommands(bot);
@@ -123,8 +119,9 @@ describe("owner commands: behaviour", () => {
 
     for (const [text, expected] of [
       ["/nhap HP-1", "Cú pháp"],
-      ["/nhap HP-1 0", "Số lượng phải > 0"],
-      ["/nhap HP-1 abc", "Số lượng phải > 0"],
+      ["/nhap HP-1 0", "Số lượng phải là số nguyên > 0"],
+      ["/nhap HP-1 abc", "Số lượng phải là số nguyên > 0"],
+      ["/nhap HP-1 2.5", "Số lượng phải là số nguyên > 0"],
       ["/nhap HP-1 2 -5", "Giá nhập không hợp lệ"],
     ] as const) {
       const { ctx, replies } = makeCtx({ chatId: 1, text });

@@ -1,5 +1,5 @@
 -- C8: server-side aggregates for the dashboard and reports. All functions are SECURITY INVOKER (RLS applies) and
--- check is_staff() explicitly so a non-staff session gets an error, not a silently empty report.
+-- check has_app_access() (staff or service_role, e.g. the Telegram bot) explicitly so a non-staff session gets an error, not a silently empty report.
 -- Revenue / COGS come from the GL (accounts 511 / 632) so reversals and voided invoices net out automatically.
 -- Month boundaries are Asia/Ho_Chi_Minh.
 
@@ -10,7 +10,7 @@ declare
   v_end   date := (date_trunc('month', (now() at time zone 'Asia/Ho_Chi_Minh')) + interval '1 month - 1 day')::date;
   r jsonb;
 begin
-  if not public.is_staff() then raise exception 'forbidden' using errcode = '42501'; end if;
+  if not public.has_app_access() then raise exception 'forbidden' using errcode = '42501'; end if;
   select jsonb_build_object(
     'products',            (select count(*) from public.products),
     'low_stock',           (select count(*) from public.low_stock_products),
@@ -34,7 +34,7 @@ create or replace function public.report_monthly_pnl(p_from date, p_to date)
 returns table(month date, revenue numeric, cogs numeric, gross_profit numeric)
 language plpgsql stable security invoker set search_path = public, pg_temp as $$
 begin
-  if not public.is_staff() then raise exception 'forbidden' using errcode = '42501'; end if;
+  if not public.has_app_access() then raise exception 'forbidden' using errcode = '42501'; end if;
   return query
   with m as (select generate_series(date_trunc('month', p_from)::date, date_trunc('month', p_to)::date, interval '1 month')::date as d),
   s as (
@@ -52,7 +52,7 @@ create or replace function public.report_top_products(p_from date, p_to date, p_
 returns table(product_id uuid, sku text, name text, qty bigint, revenue numeric, cogs numeric, margin numeric)
 language plpgsql stable security invoker set search_path = public, pg_temp as $$
 begin
-  if not public.is_staff() then raise exception 'forbidden' using errcode = '42501'; end if;
+  if not public.has_app_access() then raise exception 'forbidden' using errcode = '42501'; end if;
   return query
   select l.product_id, p.sku, p.name, sum(l.qty)::bigint, sum(l.line_net)::numeric, sum(l.line_cogs)::numeric, (sum(l.line_net) - sum(l.line_cogs))::numeric
     from public.sales_invoice_lines l
@@ -68,7 +68,7 @@ create or replace function public.report_top_customers(p_from date, p_to date, p
 returns table(customer_id uuid, name text, invoices bigint, revenue numeric, outstanding numeric)
 language plpgsql stable security invoker set search_path = public, pg_temp as $$
 begin
-  if not public.is_staff() then raise exception 'forbidden' using errcode = '42501'; end if;
+  if not public.has_app_access() then raise exception 'forbidden' using errcode = '42501'; end if;
   return query
   select c.id, c.name, count(*)::bigint, sum(i.subtotal)::numeric,
          coalesce(sum(o.outstanding), 0)::numeric
