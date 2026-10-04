@@ -7,65 +7,40 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Package, AlertTriangle, Briefcase, Wrench, Receipt, TrendingUp } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { parseDashboard, rpcOrThrow } from "@/lib/reports";
 import { formatVND, formatDate } from "@/lib/utils";
-import { vnCurrentMonthStartIso } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
+type RecentTicket = { id: string; code: string; title: string; status: string; created_at: string; customers: { name: string } | { name: string }[] | null };
+type RecentQuote = { id: string; code: string; status: string; total: number; created_at: string; customers: { name: string } | { name: string }[] | null };
+const custName = (c: RecentTicket["customers"]) => (Array.isArray(c) ? c[0]?.name : c?.name);
+
 async function getDashboardStats() {
-  const sb = createAdminClient();
-  const startOfMonth = vnCurrentMonthStartIso();
-
-  const [products, lowStock, customers, bizCustomers, openTickets, pendingQuotes, monthRevenue, recentTickets, recentQuotes] =
-    await Promise.all([
-      sb.from("products").select("id", { count: "exact", head: true }),
-      sb
-        .from("products")
-        .select("id", { count: "exact", head: true })
-        .filter("stock_qty", "lte", "min_stock"),
-      sb.from("customers").select("id", { count: "exact", head: true }),
-      sb
-        .from("customers")
-        .select("id", { count: "exact", head: true })
-        .eq("type", "business"),
-      sb
-        .from("maintenance_tickets")
-        .select("id", { count: "exact", head: true })
-        .not("status", "in", "(closed,signed)"),
-      sb
-        .from("quotations")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "sent"),
-      sb
-        .from("quotations")
-        .select("total")
-        .eq("status", "approved")
-        .gte("created_at", startOfMonth),
-      sb
-        .from("maintenance_tickets")
-        .select("id, code, title, status, created_at, customers(name)")
-        .order("created_at", { ascending: false })
-        .limit(5),
-      sb
-        .from("quotations")
-        .select("id, code, status, total, created_at, customers(name)")
-        .order("created_at", { ascending: false })
-        .limit(5),
-    ]);
-
-  const revenue = (monthRevenue.data ?? []).reduce((s: number, r: any) => s + (r.total ?? 0), 0);
-
+  const sb = await createClient();
+  const [stats, recentTickets, recentQuotes] = await Promise.all([
+    rpcOrThrow(sb, "report_dashboard", undefined, parseDashboard),
+    sb.from("maintenance_tickets").select("id, code, title, status, created_at, customers(name)").order("created_at", { ascending: false }).limit(5),
+    sb.from("quotations").select("id, code, status, total, created_at, customers(name)").order("created_at", { ascending: false }).limit(5),
+  ]);
+  if (recentTickets.error) throw new Error("maintenance_tickets: " + recentTickets.error.message);
+  if (recentQuotes.error) throw new Error("quotations: " + recentQuotes.error.message);
   return {
-    totalProducts: products.count ?? 0,
-    lowStockCount: lowStock.count ?? 0,
-    totalCustomers: customers.count ?? 0,
-    businessCustomers: bizCustomers.count ?? 0,
-    openTickets: openTickets.count ?? 0,
-    pendingQuotes: pendingQuotes.count ?? 0,
-    monthRevenue: revenue,
-    recentTickets: (recentTickets.data ?? []) as any[],
-    recentQuotes: (recentQuotes.data ?? []) as any[],
+    totalProducts: stats.products,
+    lowStockCount: stats.low_stock,
+    totalCustomers: stats.customers,
+    businessCustomers: stats.business_customers,
+    openTickets: stats.open_tickets,
+    pendingQuotes: stats.pending_quotations,
+    monthRevenue: stats.month_revenue,
+    monthGross: stats.month_revenue - stats.month_cogs,
+    arBalance: stats.ar_balance,
+    apBalance: stats.ap_balance,
+    stockValue: stats.stock_value,
+    overdueInvoices: stats.overdue_invoices,
+    recentTickets: (recentTickets.data ?? []) as unknown as RecentTicket[],
+    recentQuotes: (recentQuotes.data ?? []) as unknown as RecentQuote[],
   };
 }
 
@@ -156,8 +131,32 @@ export default async function DashboardHome() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{formatVND(s.monthRevenue)}</div>
-            <p className="text-xs text-muted-foreground">BG approved trong tháng</p>
+            <p className="text-xs text-muted-foreground">Doanh thu ghi sổ (TK 511) tháng này</p>
           </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Link href="/reports/accounting">
+          <Card className="transition-colors hover:bg-muted/50">
+            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Công nợ phải thu (131)</CardTitle></CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatVND(s.arBalance)}</div>
+              <p className="text-xs text-muted-foreground">{s.overdueInvoices} hóa đơn quá hạn</p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Công nợ phải trả (331)</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{formatVND(s.apBalance)}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Giá trị tồn kho (156)</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{formatVND(s.stockValue)}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Lãi gộp tháng</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{formatVND(s.monthGross)}</div></CardContent>
         </Card>
       </div>
 
@@ -172,8 +171,8 @@ export default async function DashboardHome() {
               <p className="text-sm text-muted-foreground">Chưa có ticket nào.</p>
             ) : (
               <ul className="space-y-2">
-                {s.recentTickets.map((t: any) => {
-                  const cn = Array.isArray(t.customers) ? t.customers[0]?.name : t.customers?.name;
+                {s.recentTickets.map((t) => {
+                  const cn = custName(t.customers);
                   return (
                     <li key={t.id} className="flex items-center justify-between text-sm">
                       <Link href={`/maintenance/tickets/${t.id}`} className="hover:underline">
@@ -200,8 +199,8 @@ export default async function DashboardHome() {
               <p className="text-sm text-muted-foreground">Chưa có báo giá nào.</p>
             ) : (
               <ul className="space-y-2">
-                {s.recentQuotes.map((q: any) => {
-                  const cn = Array.isArray(q.customers) ? q.customers[0]?.name : q.customers?.name;
+                {s.recentQuotes.map((q) => {
+                  const cn = custName(q.customers);
                   return (
                     <li key={q.id} className="flex items-center justify-between text-sm">
                       <Link href={`/quotations/${q.id}`} className="hover:underline">

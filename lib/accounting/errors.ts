@@ -23,6 +23,9 @@ const MESSAGES: Array<[string, string]> = [
   ["reason_required", "Cần nhập lý do."],
   ["earlier_period_open", "Phải khóa các kỳ trước theo thứ tự."],
   ["period_unbalanced", "Kỳ không cân (Nợ ≠ Có), không thể khóa."],
+  ["already_closed", "Kỳ này đã được khóa."],
+  ["later_period_closed", "Chỉ được mở lại kỳ khóa gần nhất."],
+  ["not_closed", "Kỳ này chưa khóa."],
   ["forbidden", "Bạn không có quyền thực hiện thao tác này."],
 ];
 
