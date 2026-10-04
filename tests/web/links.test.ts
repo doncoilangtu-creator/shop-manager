@@ -42,12 +42,9 @@ describe("internal links resolve", () => {
     }
   }
   it("found a plausible number of links", () => expect(found.length).toBeGreaterThan(20));
-  // Pages that do not exist YET and are scheduled for a later cluster. Remove entries as clusters land;
-  // the second test fails when an entry has become valid, so this list can only shrink.
-  const KNOWN_MISSING = new Set<string>([
-    "/maintenance/tickets", "/maintenance/tickets/$", "/maintenance/tickets/new",   // C7
-    "/maintenance/contracts", "/maintenance/contracts/new", "/maintenance/reports", // C7
-  ]);
+  // Pages that do not exist YET and are scheduled for a later cluster (none left after C7). Remove entries as
+  // clusters land; the second test fails when an entry has become valid, so this list can only shrink.
+  const KNOWN_MISSING = new Set<string>([]);
   const broken = [...new Set(found.filter((l) => !matches(l.href)).map((l) => l.href))];
   it("every href has a page (except the known, scheduled ones)", () => {
     const unexpected = found.filter((l) => !matches(l.href) && !KNOWN_MISSING.has(l.href));

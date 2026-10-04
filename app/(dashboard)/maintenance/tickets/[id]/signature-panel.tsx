@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Copy, ExternalLink, Send, Check, X } from "lucide-react";
@@ -177,7 +178,10 @@ export function SignaturePanel({
                     )}
                   </div>
                   {sig && (
-                    <img
+                    <Image
+                      unoptimized
+                      width={96}
+                      height={48}
                       src={`data:image/png;base64,${sig.signature_png}`}
                       alt={`Chữ ký ${ROLE_LABEL[role]}`}
                       className="h-12 w-24 rounded border bg-white object-contain"
