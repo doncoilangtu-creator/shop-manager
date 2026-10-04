@@ -150,6 +150,23 @@ Toàn bộ schema trong `supabase/migrations/0001_init.sql` (đầy đủ ENUM, 
 | `npm run build` | Build production               |
 | `npm run start` | Chạy bản build                 |
 | `npm run lint`  | ESLint                         |
+| `npm run typecheck` | `tsc --noEmit`             |
+| `npm test`      | Vitest (unit/smoke tests)      |
+
+Bot (`cd bot`): `npm run typecheck`, `npm test`, `npm run build`.
+Tests/CI chạy trên **Node 22** (vitest 5 yêu cầu Node ≥ 22.12; chỉ ảnh hưởng dev/CI, không ảnh hưởng runtime Vercel).
+
+### CI & baseline (cụm C0, 2026-10-02)
+
+GitHub Actions (`.github/workflows/ci.yml`) chạy cho mọi PR: web = `npm ci → typecheck → lint → test → build` (env Supabase giả), bot = `npm ci → typecheck → test → build`. Baseline "không được tệ hơn":
+
+| Mục | Kết quả |
+| --- | --- |
+| `tsc --noEmit` (web, bot) | 0 lỗi |
+| `next lint` | 0 lỗi, 13 warning (12 `no-explicit-any`, 1 `no-img-element`) |
+| `npm test` | web 34 test, bot 30 test — pass |
+| `next build` | OK (16 route) |
+| `npm audit --omit=dev` | web: 1 critical (`next@14.2.35` — **không có bản 14.x đã vá**, cần `next >= 15.5.24`, làm ở PR riêng); bot: 0 |
 
 ---
 
