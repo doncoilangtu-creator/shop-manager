@@ -23,7 +23,7 @@ export function registerStartCommand(bot: Bot) {
         "👋 Chào anh chủ shop!\n\n" +
           "Các lệnh:\n" +
           "  /ton — Sản phẩm sắp hết hàng\n" +
-          "  /nhap <SKU> <SL> [giá nhập] — Nhập kho nhanh\n" +
+          "  /nhap <NCC> <SKU> <SL> <giá nhập> [số chứng từ] — Nhập hàng có chứng từ (phiếu mua)\n" +
           "  /ban <khách/SĐT> <SKU> <SL> — Bán nhanh (ghi hóa đơn, trừ kho)\n" +
           "  /khach <từ khóa> — Tìm khách\n" +
           "  /baotri — Lịch bảo trì 7 ngày tới\n" +

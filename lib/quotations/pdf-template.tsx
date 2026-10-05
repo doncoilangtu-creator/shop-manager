@@ -391,12 +391,14 @@ export function QuotationPdfDocument(props: PdfQuotationProps) {
               </Text>
             </View>
           ) : null}
-          <View style={styles.totalsRow}>
-            <Text style={styles.totalsLabel}>VAT:</Text>
-            <Text style={styles.totalsValue}>{formatVND(quotation.vat)}</Text>
-          </View>
+          {quotation.vat > 0 ? (
+            <View style={styles.totalsRow}>
+              <Text style={styles.totalsLabel}>VAT:</Text>
+              <Text style={styles.totalsValue}>{formatVND(quotation.vat)}</Text>
+            </View>
+          ) : null}
           <View style={styles.totalsRowFinal}>
-            <Text style={styles.totalsLabelFinal}>TỔNG CỘNG:</Text>
+            <Text style={styles.totalsLabelFinal}>{quotation.vat > 0 ? "TỔNG CỘNG:" : "TỔNG CỘNG (đã gồm thuế):"}</Text>
             <Text style={styles.totalsValueFinal}>
               {formatVND(quotation.total)}
             </Text>

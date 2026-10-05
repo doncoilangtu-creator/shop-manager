@@ -84,7 +84,7 @@ describe("quotationFormSchema", () => {
     customer_id: "",
     valid_until: "2026-12-31",
     discount: 0,
-    vat_rate: 10,
+    vat_rate: 0,
     items: [{ product_id: PID, qty: 1, unit_price: 10, discount: 0 }],
   };
 
@@ -117,6 +117,16 @@ describe("quotationFormSchema", () => {
       }).success,
     ).toBe(false);
     expect(quotationFormSchema.safeParse({ ...valid, vat_rate: 101 }).success).toBe(false);
+  });
+
+  it("hộ kinh doanh: báo giá không tách VAT (vat_rate chỉ nhận 0, mặc định 0)", () => {
+    const r10 = quotationFormSchema.safeParse({ ...valid, vat_rate: 10 });
+    expect(r10.success).toBe(false);
+    if (!r10.success) expect(r10.error.issues[0].message).toMatch(/không tách VAT/);
+    const { vat_rate: _omit, ...noVat } = valid;
+    const r = quotationFormSchema.safeParse(noVat);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.vat_rate).toBe(0);
   });
 
   it("rejects an invalid valid_until date", () => {

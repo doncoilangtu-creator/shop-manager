@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { formatVND } from "@/lib/utils";
 import { vnDate, vnParts } from "@/lib/time";
-import { parseAging, parseRecon, parseTrialBalance, parseVat, rpcOrThrow } from "@/lib/reports";
+import { parseAccountingMode, parseAging, parseRecon, parseTrialBalance, parseVat, rpcOrThrow } from "@/lib/reports";
+import { parseThresholdStatus, thresholdBanner } from "@/lib/hkd/threshold";
 import { PeriodControls, PostStockAdjustmentsButton } from "./period-controls";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +21,12 @@ export default async function AccountingReportPage(props: { searchParams: Promis
   const to = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
   const sb = await createClient();
 
-  const [tb, vat, aging, recon, periods, owner] = await Promise.all([
+  const mode = await rpcOrThrow(sb, "accounting_mode", undefined, parseAccountingMode);
+  const [tb, vat, thr, aging, recon, periods, owner] = await Promise.all([
     rpcOrThrow(sb, "trial_balance", { p_from: null, p_to: to }, parseTrialBalance),
-    rpcOrThrow(sb, "vat_report", { p_year: year, p_month: month }, parseVat),
+    // Báo cáo Thuế GTGT chỉ còn ở chế độ enterprise (legacy); hộ kinh doanh không có TK 3331/133.
+    mode === "enterprise" ? rpcOrThrow(sb, "vat_report", { p_year: year, p_month: month }, parseVat) : Promise.resolve(null),
+    rpcOrThrow(sb, "threshold_status", { p_year: year }, parseThresholdStatus),
     rpcOrThrow(sb, "ar_aging", { p_as_of: vnDate() }, parseAging),
     rpcOrThrow(sb, "accounting_reconciliation", undefined, parseRecon),
     sb.from("fiscal_periods").select("year, month, status, closed_at").order("year", { ascending: false }).order("month", { ascending: false }).limit(12),
@@ -84,14 +88,35 @@ export default async function AccountingReportPage(props: { searchParams: Promis
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>Thuế GTGT tháng {mm}/{year}</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 text-sm sm:grid-cols-3">
-          <div><div className="text-muted-foreground">Đầu ra (3331)</div><div className="text-xl font-bold">{formatVND(vat.output_vat)}</div></div>
-          <div><div className="text-muted-foreground">Đầu vào (133)</div><div className="text-xl font-bold">{formatVND(vat.input_vat)}</div></div>
-          <div><div className="text-muted-foreground">{vat.payable >= 0 ? "Phải nộp" : "Được khấu trừ"}</div><div className="text-xl font-bold">{formatVND(Math.abs(vat.payable))}</div></div>
-        </CardContent>
-      </Card>
+      {vat ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Thuế GTGT tháng {mm}/{year} (chế độ doanh nghiệp — legacy)</CardTitle>
+            <CardDescription>Chỉ hiển thị khi chủ cửa hàng bật chế độ doanh nghiệp. Hộ kinh doanh không ghi nhận VAT đầu ra/đầu vào.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 text-sm sm:grid-cols-3">
+            <div><div className="text-muted-foreground">Đầu ra (3331)</div><div className="text-xl font-bold">{formatVND(vat.output_vat)}</div></div>
+            <div><div className="text-muted-foreground">Đầu vào (133)</div><div className="text-xl font-bold">{formatVND(vat.input_vat)}</div></div>
+            <div><div className="text-muted-foreground">{vat.payable >= 0 ? "Phải nộp" : "Được khấu trừ"}</div><div className="text-xl font-bold">{formatVND(Math.abs(vat.payable))}</div></div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Doanh thu tính thuế năm {year}</CardTitle>
+            <CardDescription>
+              Hộ kinh doanh: giá bán đã gồm thuế, không tách VAT, không khấu trừ VAT đầu vào (thuế trên hóa đơn mua nằm trong giá vốn).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 text-sm sm:grid-cols-3">
+            <div><div className="text-muted-foreground">Doanh thu năm (đã trừ hàng bán trả lại)</div><div className="text-xl font-bold">{formatVND(thr.revenue)}</div></div>
+            <div><div className="text-muted-foreground">Ngưỡng doanh thu</div><div className="text-xl font-bold">{thr.threshold === null ? "—" : formatVND(thr.threshold)}</div></div>
+            <div><div className="text-muted-foreground">Đã dùng</div><div className="text-xl font-bold">{thr.pct === null ? "—" : `${thr.pct}%`}</div></div>
+            {thresholdBanner(thr) && <p className="text-sm font-medium text-amber-700 sm:col-span-3">{thresholdBanner(thr)!.title}</p>}
+            <div className="sm:col-span-3"><Button asChild variant="outline" size="sm"><Link href={`/reports/revenue?year=${year}`}>Xem báo cáo doanh thu theo tháng và nhóm ngành</Link></Button></div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle>Tuổi nợ phải thu (đến {vnDate()})</CardTitle></CardHeader>

@@ -13,7 +13,7 @@ const P1 = "11111111-1111-4111-8111-111111111111";
 const P2 = "22222222-2222-4222-8222-222222222222";
 const C = "33333333-3333-4333-8333-333333333333";
 const base = {
-  customer_id: C, valid_until: "2026-12-31", notes: "n", discount: 1000, vat_rate: 10,
+  customer_id: C, valid_until: "2026-12-31", notes: "n", discount: 1000, vat_rate: 0,
   items: [
     { product_id: P1, qty: 1, unit_price: 100, discount: 0, notes: "ghi chú dòng 1" },
     { product_id: "", qty: 1, unit_price: 0, discount: 0, notes: "dòng trống" },   // blank row between real rows
@@ -51,7 +51,7 @@ describe("createQuotationAction", () => {
     expect(rpc).toHaveBeenCalledTimes(1);
     const [name, args] = rpc.mock.calls[0];
     expect(name).toBe("save_quotation");
-    expect(args).toMatchObject({ p_id: null, p_status: "sent", p_customer_id: C, p_discount: 1000, p_vat_rate: 10 });
+    expect(args).toMatchObject({ p_id: null, p_status: "sent", p_customer_id: C, p_discount: 1000, p_vat_rate: 0 });
     expect(args.p_code).toMatch(/^BG-\d{8}-[0-9A-Z]{8}$/);
     expect(Object.keys(args)).not.toContain("p_total");
   });

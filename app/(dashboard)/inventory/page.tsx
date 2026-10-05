@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Package, AlertTriangle } from "lucide-react";
+import { Plus, Package, AlertTriangle, ArrowDownToLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,6 @@ import { createClient } from "@/lib/supabase/server";
 import { formatVND } from "@/lib/utils";
 import { ilikeOr } from "@/lib/search";
 import { InventoryFilterBar } from "./filter-bar";
-import { StockInDialog } from "./stock-in-dialog";
 import { DeleteProductButton } from "./delete-button";
 
 export const dynamic = "force-dynamic";
@@ -55,13 +54,10 @@ export default async function InventoryPage(props: PageProps) {
   if (orFilter) query = query.or(orFilter);
   if (categoryId) query = query.eq("category_id", categoryId);
 
-  const [{ data: products, count, error }, { data: categories }, quickRes] = await Promise.all([
+  const [{ data: products, count, error }, { data: categories }] = await Promise.all([
     query,
     supabase.from("categories").select("id, name").order("name"),
-    // the quick stock-in dialog needs ALL products, not only the current page
-    supabase.from("products").select("id, sku, name, stock_qty").order("name").limit(2000),
   ]);
-  const quickProducts = quickRes.data ?? [];
 
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -76,7 +72,12 @@ export default async function InventoryPage(props: PageProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <StockInDialog products={quickProducts} />
+          <Button asChild variant="outline">
+            <Link href="/purchases/new">
+              <ArrowDownToLine className="mr-2 h-4 w-4" />
+              Nhập hàng (phiếu mua)
+            </Link>
+          </Button>
           <Button asChild>
             <Link href="/inventory/new">
               <Plus className="mr-2 h-4 w-4" />

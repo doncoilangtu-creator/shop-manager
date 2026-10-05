@@ -64,8 +64,8 @@ export default async function QuotationDetailPage(props: { params: Promise<{ id:
         <div className="ml-auto w-full max-w-sm space-y-1 p-4 text-sm">
           <div className="flex justify-between"><span>Tạm tính</span><span>{formatVND(q.subtotal)}</span></div>
           <div className="flex justify-between"><span>Chiết khấu</span><span>- {formatVND(q.discount)}</span></div>
-          <div className="flex justify-between"><span>VAT</span><span>{formatVND(q.vat)}</span></div>
-          <div className="flex justify-between border-t pt-2 text-base font-semibold"><span>Tổng cộng</span><span>{formatVND(q.total)}</span></div>
+          {Number(q.vat) > 0 && <div className="flex justify-between"><span>VAT (báo giá cũ)</span><span>{formatVND(q.vat)}</span></div>}
+          <div className="flex justify-between border-t pt-2 text-base font-semibold"><span>Tổng cộng{Number(q.vat) > 0 ? "" : " (đã gồm thuế)"}</span><span>{formatVND(q.total)}</span></div>
         </div>
       </Card>
       {q.notes && <Card className="p-4 text-sm"><b>Ghi chú:</b> {q.notes}</Card>}

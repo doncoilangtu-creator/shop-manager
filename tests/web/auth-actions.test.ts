@@ -25,8 +25,9 @@ const MODULES = {
   suppliers: () => import("@/lib/actions/suppliers"),
   maintenance: () => import("@/app/(dashboard)/maintenance/actions"),
   quotations: () => import("@/lib/quotations/actions"),
+  purchases: () => import("@/lib/actions/purchases"),
 };
-const EXPECTED_ACTIONS = { customers: 3, inventory: 5, suppliers: 5, maintenance: 7, quotations: 10 };
+const EXPECTED_ACTIONS = { customers: 3, inventory: 4, suppliers: 5, maintenance: 7, quotations: 10, purchases: 2 };
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const fd = () => new FormData();

@@ -8,6 +8,7 @@ import { dbErrorMessage } from "../lib/errors";
 const DENIED = "⛔ Lệnh chỉ dành cho chủ shop.";
 const HTML = { parse_mode: "HTML" as const };
 const BAN_USAGE = 'Cú pháp: /ban [khách/SĐT] &lt;SKU&gt; &lt;SL&gt; [&lt;SKU&gt; &lt;SL&gt; ...] [tm|ck]\nVD: /ban HP-1234 2 (khách lẻ, tiền mặt)\nVD: /ban "Nguyen Van A" HP-1234 2 KB-1 1 ck';
+const NHAP_USAGE = 'Cú pháp: /nhap &lt;NCC&gt; &lt;SKU&gt; &lt;SL&gt; &lt;giá nhập&gt; [số chứng từ]\nVD: /nhap "Cty Linh Kiện" HP-1234 5 4500000 HD0012\nGiá nhập = giá vốn mỗi cái (đã gồm thuế nếu hóa đơn mua có thuế). Nhập nhiều dòng hoặc có VAT: dùng web, mục Mua hàng.';
 const WALKIN_WORDS = new Set(["le", "lẻ", "khachle", "khách lẻ", "khach le"]);
 const MAX_BAN_LINES = 20;
 
@@ -54,30 +55,54 @@ export function registerOwnerCommands(bot: Bot) {
     await ctx.reply(`⚠️ <b>${low.length} SP sắp hết:</b>\n\n` + lines.join("\n"), HTML);
   });
 
-  // /nhap SKU SL [GIÁ] — nhập kho nhanh qua RPC stock_adjust (sổ kho append-only, tồn cập nhật nguyên tử)
+  // /nhap <NCC> <SKU> <SL> <giá nhập> [số chứng từ] — nhập hàng CÓ CHỨNG TỪ: MỘT lệnh gọi RPC nguyên tử post_purchase_bill
+  //   (kho + công nợ nhà cung cấp + sổ cái). Hộ kinh doanh không dùng TK 133: giá nhập là giá vốn (đã gồm thuế nếu hóa đơn có thuế).
+  //   Không còn nhập kho tay qua stock_adjust (sẽ bị chặn ở DB vì không có chứng từ mua).
   bot.command("nhap", async (ctx: Context) => {
     const u = await authenticateOwner(ctx);
     if (!u) return ctx.reply(DENIED);
     const parts = parseArgs(commandArgs(ctx.message?.text, "nhap"));
-    if (parts.length < 2 || parts.length > 3) return ctx.reply("Cú pháp: /nhap <SKU> <SL> [giá nhập]\nVD: /nhap HP-1234 5 4500000");
-    const [sku, qtyRaw, costRaw] = parts;
+    if (parts.length < 4 || parts.length > 5) return ctx.reply(NHAP_USAGE, HTML);
+    const [supplierKw, sku, qtyRaw, costRaw, ref] = parts;
     const qty = parsePositiveInt(qtyRaw);
     if (qty === null) return ctx.reply("Số lượng phải là số nguyên > 0.");
-    const unitCost = costRaw === undefined ? 0 : parseMoney(costRaw);
-    if (unitCost === null) return ctx.reply("Giá nhập không hợp lệ.");
+    const unitCost = parseMoney(costRaw);
+    if (unitCost === null || !(unitCost > 0)) return ctx.reply("Giá nhập không hợp lệ (phải > 0).");
+    if (ref !== undefined && ref.length > 60) return ctx.reply("Số chứng từ tối đa 60 ký tự.");
 
     const sb = getSupabase();
+    const filter = ilikeOr(["name", "phone"], supplierKw);
+    if (!filter) return ctx.reply("Từ khóa nhà cung cấp không hợp lệ.");
+    const { data: sups, error: se } = await sb.from("suppliers").select("id, name, phone").or(filter).limit(4);
+    if (se) return ctx.reply(dbErrorMessage(se.message));
+    const slist = (sups ?? []) as Array<{ id: string; name: string; phone: string | null }>;
+    if (slist.length === 0) return ctx.reply(`Không tìm thấy nhà cung cấp: <code>${esc(supplierKw)}</code>. Thêm NCC trên web ${appLink("/suppliers/new")} rồi nhập lại.`, HTML);
+    const exact = slist.filter((x) => x.phone === supplierKw || x.name.toLowerCase() === supplierKw.toLowerCase());
+    const sup = exact.length === 1 ? exact[0] : slist.length === 1 ? slist[0] : null;
+    if (!sup) {
+      return ctx.reply("Có nhiều nhà cung cấp phù hợp, hãy nhập rõ hơn (SĐT hoặc tên đầy đủ):\n" + slist.map((x) => `• ${esc(x.name)} — ${esc(x.phone ?? "—")}`).join("\n"), HTML);
+    }
+
     const { data: prod, error: pe } = await sb.from("products").select("id, name, stock_qty").eq("sku", sku).maybeSingle();
     if (pe) return ctx.reply(dbErrorMessage(pe.message));
     if (!prod) return ctx.reply(`Không tìm thấy SP với SKU <code>${esc(sku)}</code>`, HTML);
 
-    const { data, error } = await sb.rpc("stock_adjust", {
-      p_product_id: prod.id, p_type: "in", p_qty: qty, p_unit_cost: unitCost,
-      p_ref_type: "manual", p_ref_id: null, p_notes: `Nhập qua Telegram bot (${u.name ?? u.id})`,
+    const { data, error } = await sb.rpc("post_purchase_bill", {
+      p_supplier_id: sup.id, p_bill_date: vnDate(), p_due_date: null,
+      p_lines: [{ product_id: prod.id, qty, unit_cost: unitCost, vat_rate: 0 }], // vat_rate 0: giá nhập là giá vốn (đã gồm thuế nếu có)
+      p_supplier_ref: ref ?? null, p_memo: `Nhập qua Telegram bot (${u.name ?? u.id})`,
     });
-    if (error) return ctx.reply(dbErrorMessage(error.message));
-    const newQty = Number((data as { stock_qty?: number } | null)?.stock_qty ?? NaN);
-    await ctx.reply(`✅ Đã nhập <b>${qty}</b> ${esc(prod.name)} (${esc(sku)})\nTồn mới: <b>${Number.isFinite(newQty) ? newQty : "?"}</b>`, HTML);
+    if (error) {
+      if (/uq_pb_supplier_ref|23505/.test(error.message)) return ctx.reply("Số chứng từ của nhà cung cấp này đã được nhập trước đó.");
+      return ctx.reply(dbErrorMessage(error.message));
+    }
+    const r = (data ?? {}) as { bill_id?: string; bill_no?: string; total?: number };
+    if (!r.bill_id) return ctx.reply("Không nhận được mã phiếu từ hệ thống, hãy kiểm tra trên web trước khi nhập lại.");
+    await ctx.reply(
+      `✅ Phiếu mua <b>${esc(r.bill_no)}</b> — nhập <b>${qty}</b> ${esc(prod.name)} (${esc(sku)})\nNhà cung cấp: ${esc(sup.name)}${ref ? ` · chứng từ ${esc(ref)}` : ""}\n` +
+        `Tổng: <b>${fmtVND(Number(r.total ?? qty * unitCost))}</b> (giá vốn, ghi công nợ nhà cung cấp)\nChi tiền / hủy phiếu: ${appLink(`/purchases/${r.bill_id}`)}`,
+      HTML,
+    );
   });
 
   // /ban [khách/SĐT] <SKU> <SL> [<SKU> <SL> ...] [tm|ck] — bán nhanh, THU TIỀN NGAY, MỘT lệnh gọi RPC nguyên tử post_sale_hkd:

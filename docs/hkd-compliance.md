@@ -69,3 +69,29 @@ Bảng mới (`sales_returns`, `sales_return_lines`, `sale_payments`, `einvoices
 5. **Quy tắc nhóm ngành của dòng** (dòng → sản phẩm → hồ sơ → hàng hóa). Dịch vụ/lắp ráp cần kế toán thuế xác nhận nhóm.
 6. **Hoàn tiền trả hàng**: tự trừ vào công nợ còn lại của chính đơn trước, phần còn lại hoàn bằng phương thức chọn (mặc định tiền mặt).
 7. **Đơn cũ lập bằng `post_sales_invoice` (có VAT)** vẫn xem được, nhưng chưa hỗ trợ trả hàng tự động; A3 sẽ gỡ VAT khỏi luồng này.
+
+## A3 — Gỡ xung đột VAT (migration `0014_hkd_vat_removal.sql`)
+
+### Nguyên tắc
+Hộ kinh doanh (nhóm nộp thuế theo tỷ lệ % trên doanh thu, TT152/2025) **không** kê khai, khấu trừ hay nộp thuế GTGT theo phương pháp khấu trừ. Vì vậy ở chế độ mặc định `hkd`:
+
+- **TK 3331 / 133 không được ghi mới**: trigger trên `journal_lines` chặn dòng mới vào hai tài khoản này (`vat_account_not_allowed_hkd`). Bút toán *đảo* (`reverses_id`) của chứng từ cũ vẫn được phép để hủy được dữ liệu legacy.
+- **Bán hàng/báo giá không có VAT**: `sales_invoices`/`sales_invoice_lines` không nhận `vat_amount`/`vat_rate` khác 0; `quotations.vat` phải = 0 (`vat_not_allowed_hkd`). Báo giá dùng **đơn giá đã gồm thuế**. `invoice_from_quotation` ở chế độ HKD gọi `post_sale_hkd` (đơn bán nguyên tử, ghi công nợ cho khách có tên, giữ liên kết `quotation_id`); báo giá cũ có VAT phải lập lại.
+- **Mua hàng có chứng từ**: `post_purchase_bill` ghi `Nợ 156 = tiền hàng + VAT trên hóa đơn mua / Có 331`. VAT đầu vào **không** vào TK 133 mà cộng vào giá vốn hàng tồn (`stock_movements.value_delta`, giá vốn bình quân). `purchase_bills.vat_amount` vẫn lưu để tra cứu. `reverse_purchase_bill` hoàn kho đúng giá trị đã nhập.
+- **Nhập kho tay bị chặn**: `stock_adjust(type 'in')` chỉ còn cho tồn đầu kỳ (`ref_type = 'opening'`, đối ứng vốn chủ sở hữu 411). Hàng mua phải có phiếu mua (web: **Mua hàng**; bot: `/nhap <NCC> <SKU> <SL> <giá nhập> [số chứng từ]`). Nhờ vậy **TK 711 không còn nhận “hàng mua” chưa có chứng từ**; 711/811 chỉ còn cho chênh lệch kiểm kê (`adjust` / `stocktake`).
+- **Báo cáo**: thẻ “Thuế GTGT” (`vat_report`) ở `/reports/accounting` chỉ hiện khi chế độ = `enterprise`; ở HKD thay bằng thẻ **Doanh thu tính thuế năm so với ngưỡng** (liên kết `/reports/revenue`).
+
+### Chế độ kế toán `accounting_mode`
+Bảng `app_settings` (staff đọc, không ghi trực tiếp). `accounting_mode()` trả `'hkd'` (mặc định, an toàn) hoặc `'enterprise'` (luồng VAT 3331/133 cũ, giữ để tương thích và để chạy các test cũ). `set_accounting_mode(mode, lý do ≥ 5 ký tự)`: **chỉ owner**, ghi `accounting_audit`. Web không có nút đổi chế độ (chủ đổi bằng RPC có chủ ý); web luôn gửi VAT = 0.
+
+### Di chuyển dữ liệu
+Forward-only, không UPDATE dữ liệu cũ. Production hiện gần như trống (15 TK, 1 owner), nên không cần backfill; mọi chứng từ legacy có 3331/133 (nếu có) vẫn đọc và hủy được.
+
+### Quyết định cần chủ xác nhận (A3)
+1. **Mặc định `hkd`**, kèm công tắc legacy `enterprise` (chỉ owner, có lý do, có audit). Nếu không cần legacy, có thể bỏ công tắc ở bản sau.
+2. **VAT trên hóa đơn mua được cộng vào giá vốn** (không khấu trừ, không ghi TK 133). Đây là cách xử lý an toàn cho HKD nộp thuế theo tỷ lệ; kế toán thuế cần xác nhận nếu HKD đăng ký khấu trừ.
+3. **Chặn nhập kho tay** (không NCC/chứng từ). Tồn đầu kỳ vẫn nhập được qua `ref_type = 'opening'`; kiểm kê thừa vẫn ghi 711, thiếu ghi 811.
+4. **Báo giá là giá đã gồm thuế**; báo giá cũ có VAT không xuất hóa đơn được ở chế độ HKD (lập lại báo giá).
+5. **Bút toán đảo 3331/133 của chứng từ legacy vẫn được phép** để không làm kẹt dữ liệu cũ.
+6. **`/nhap` đổi cú pháp**: bắt buộc NCC, giá nhập > 0 và (tùy chọn) số chứng từ; không còn `/nhap <SKU> <SL>`. Nhập nhiều dòng hoặc có VAT dùng web.
+7. **Ẩn báo cáo Thuế GTGT** ở HKD (chỉ hiện ở chế độ enterprise).

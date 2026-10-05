@@ -6,6 +6,9 @@ const MESSAGES: Array<[string, string]> = [
   ["product_not_found", "Không tìm thấy sản phẩm."],
   ["walkin_must_pay_in_full", "Khách lẻ phải thanh toán đủ."],
   ["total_must_be_positive", "Tổng tiền phải lớn hơn 0."],
+  ["supplier_not_found", "Không tìm thấy nhà cung cấp."],
+  ["stock_in_requires_purchase_bill", "Nhập hàng phải có chứng từ mua (dùng /nhap <NCC> <SKU> <SL> <giá nhập>)."],
+  ["vat_not_allowed_hkd", "Hộ kinh doanh không tách VAT: dùng giá đã gồm thuế."],
   ["qty_invalid", "Số lượng không hợp lệ."],
   ["forbidden", "Bot không có quyền (kiểm tra SUPABASE_SERVICE_ROLE_KEY)."],
 ];

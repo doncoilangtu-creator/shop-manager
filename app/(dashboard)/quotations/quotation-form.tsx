@@ -23,7 +23,7 @@ interface Props {
     valid_until: string;
     notes: string;
     discount: number;
-    vat_rate: number;
+    vat_rate?: number;
     lines: Array<Omit<LineRow, "uid">>;
   };
   defaultValidUntil: string;
@@ -40,7 +40,6 @@ export function QuotationForm({ customers, products, quotationId, initial, defau
   const [validUntil, setValidUntil] = useState(initial?.valid_until ?? defaultValidUntil);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [discount, setDiscount] = useState(String(initial?.discount ?? 0));
-  const [vatRate, setVatRate] = useState(String(initial?.vat_rate ?? 10));
   const [lines, setLines] = useState<LineRow[]>(
     initial?.lines.length ? initial.lines.map((l) => ({ ...l, uid: nextUid() })) : [makeBlankLine(nextUid())],
   );
@@ -52,7 +51,7 @@ export function QuotationForm({ customers, products, quotationId, initial, defau
     valid_until: validUntil,
     notes,
     discount: Number(discount) || 0,
-    vat_rate: Number(vatRate) || 0,
+    vat_rate: 0,
     items: lines.map((l) => ({ product_id: l.product_id, qty: l.qty, unit_price: l.unit_price, discount: l.discount, notes: l.notes })),
   };
   const totals = computeQuotationTotals(payload);
@@ -92,11 +91,9 @@ export function QuotationForm({ customers, products, quotationId, initial, defau
           <Label htmlFor="q-valid">Hiệu lực đến</Label>
           <Input id="q-valid" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} required />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="q-vat">VAT (%)</Label>
-          <select id="q-vat" className={selectCls} value={vatRate} onChange={(e) => setVatRate(e.target.value)}>
-            {[0, 5, 8, 10].map((v) => <option key={v} value={v}>{v}%</option>)}
-          </select>
+        <div className="space-y-1 text-sm text-muted-foreground">
+          <Label>Thuế</Label>
+          <p>Đơn giá trong báo giá <b>đã gồm thuế</b> (hộ kinh doanh không tách VAT).</p>
         </div>
       </Card>
 
@@ -166,8 +163,7 @@ export function QuotationForm({ customers, products, quotationId, initial, defau
             <span>Chiết khấu (đ)</span>
             <Input type="number" min={0} className="w-40 text-right" value={discount} onChange={(e) => setDiscount(e.target.value)} />
           </div>
-          <div className="flex justify-between"><span>VAT {vatRate}%</span><span>{formatVND(totals.vat)}</span></div>
-          <div className="flex justify-between border-t pt-2 text-base font-semibold"><span>Tổng cộng</span><span>{formatVND(totals.total)}</span></div>
+          <div className="flex justify-between border-t pt-2 text-base font-semibold"><span>Tổng cộng (đã gồm thuế)</span><span>{formatVND(totals.total)}</span></div>
           <p className="text-xs text-muted-foreground">Số liệu chính thức được tính lại trên máy chủ khi lưu.</p>
         </Card>
       </div>

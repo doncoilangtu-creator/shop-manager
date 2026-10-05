@@ -119,10 +119,12 @@ describe("owner commands: behaviour", () => {
 
     for (const [text, expected] of [
       ["/nhap HP-1", "Cú pháp"],
-      ["/nhap HP-1 0", "Số lượng phải là số nguyên > 0"],
-      ["/nhap HP-1 abc", "Số lượng phải là số nguyên > 0"],
-      ["/nhap HP-1 2.5", "Số lượng phải là số nguyên > 0"],
-      ["/nhap HP-1 2 -5", "Giá nhập không hợp lệ"],
+      ["/nhap HP-1 2 100", "Cú pháp"],
+      ["/nhap NCC HP-1 0 100", "Số lượng phải là số nguyên > 0"],
+      ["/nhap NCC HP-1 abc 100", "Số lượng phải là số nguyên > 0"],
+      ["/nhap NCC HP-1 2.5 100", "Số lượng phải là số nguyên > 0"],
+      ["/nhap NCC HP-1 2 -5", "Giá nhập không hợp lệ"],
+      ["/nhap NCC HP-1 2 0", "Giá nhập không hợp lệ"],
     ] as const) {
       const { ctx, replies } = makeCtx({ chatId: 1, text });
       await handlers.get("nhap")!(ctx);

@@ -64,3 +64,7 @@ export const parseAging = (raw: unknown): AgingRow[] =>
     d61_90: num(o.d61_90), d90_plus: num(o.d90_plus), open_total: num(o.open_total), unapplied: num(o.unapplied) }));
 export const parseRecon = (raw: unknown): ReconRow[] =>
   rows(raw).map((o) => ({ check_name: String(o.check_name), gl_value: num(o.gl_value), subledger_value: num(o.subledger_value), diff: num(o.diff) }));
+
+/** Chế độ kế toán (RPC accounting_mode): 'hkd' (mặc định, không VAT 3331/133) hoặc 'enterprise' (legacy). Giá trị lạ -> 'hkd' (an toàn). */
+export type AccountingMode = "hkd" | "enterprise";
+export const parseAccountingMode = (raw: unknown): AccountingMode => (raw === "enterprise" ? "enterprise" : "hkd");
