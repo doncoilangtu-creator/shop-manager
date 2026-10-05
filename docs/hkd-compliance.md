@@ -95,3 +95,27 @@ Forward-only, không UPDATE dữ liệu cũ. Production hiện gần như trốn
 5. **Bút toán đảo 3331/133 của chứng từ legacy vẫn được phép** để không làm kẹt dữ liệu cũ.
 6. **`/nhap` đổi cú pháp**: bắt buộc NCC, giá nhập > 0 và (tùy chọn) số chứng từ; không còn `/nhap <SKU> <SL>`. Nhập nhiều dòng hoặc có VAT dùng web.
 7. **Ẩn báo cáo Thuế GTGT** ở HKD (chỉ hiện ở chế độ enterprise).
+
+## A4 — Tiền theo từng tài khoản (migration `0015_money_accounts.sql`)
+
+### Mô hình
+- Bảng `money_accounts`: loại `cash` (TK 111) / `bank` / `ewallet` (TK 112), tên hiển thị (không trùng), ngân hàng/nhà cung cấp ví, **chỉ 4 số cuối** của số tài khoản (`****1234` — không lưu số đầy đủ), chủ tài khoản, cờ **đã thông báo cơ quan thuế** (+ ngày; tiền mặt không có cờ này), cờ **mặc định** (tối đa 1 mặc định cho mỗi TK 111/112), cờ đang sử dụng. Có sẵn tài khoản “Tiền mặt” mặc định.
+- `journal_lines`, `payments`, `sale_payments` có cột `money_account_id` (nullable). Trigger `trg_jl_rules` bắt buộc `money_account_id` chỉ đi với TK 111/112 và đúng TK liên kết của tài khoản (`money_account_mismatch`). **Không backfill** (sổ cái bất biến).
+- Thu/chi công nợ (`post_receipt[_fifo]`, `post_disbursement[_fifo]`), bán hàng (`post_sale_hkd`, mỗi khoản thanh toán có `money_account_id`) và hoàn tiền trả hàng (`post_sale_return`, `p_refund_account_id` hoặc từng khoản trong `p_refunds`) ghi tiền vào **đúng tài khoản**. Không chọn tài khoản = tài khoản mặc định của phương thức (nếu chưa có thì dòng “chưa gán”).
+- `money_balances(as_of)`: số dư từng tài khoản từ sổ cái; dòng cũ chưa gán được tính vào tài khoản mặc định cùng TK, nếu chưa có mặc định thì hiện thành dòng “Chưa gán tài khoản (TK 111/112)”. `money_book(...)`: sổ tiền từng tài khoản có số dư lũy kế. `accounting_reconciliation()` thêm dòng đối chiếu *tổng các tài khoản tiền = TK 111 + TK 112*.
+- `post_money_opening` (chỉ owner): số dư đầu kỳ Nợ 111/112 — Có 411. `post_money_transfer` / `reverse_money_transfer`: chuyển tiền nội bộ (nộp/rút tiền mặt, ngân hàng ↔ ví), số phiếu `MT-…`, không phải doanh thu/chi phí; hủy bằng bút toán đảo.
+- `upsert_money_account` (chỉ owner, có audit): không đổi loại sau khi tạo; không ngừng sử dụng tài khoản còn số dư ≠ 0 hoặc đang là mặc định.
+
+### Giao diện
+- **Tiền & Quỹ** (`/money`): tổng tiền, tiền mặt/ngân hàng-ví, danh sách tài khoản + số dư, cảnh báo (tài khoản ngân hàng/ví chưa đánh dấu đã thông báo thuế — mẫu 01/BK-STK; có tiền “chưa gán”; số dư âm), chuyển tiền nội bộ, số dư đầu kỳ và thêm/sửa tài khoản (chủ hộ). `/money/[id]`: sổ tiền theo ngày.
+- Chọn tài khoản khi: bán hàng (mỗi khoản thu), thu/chi công nợ, hoàn tiền trả hàng. Chi tiết đơn bán hiển thị tài khoản nhận tiền.
+- Bot `/ban … ck` không đổi: chuyển khoản vào tài khoản ngân hàng mặc định (nếu chưa có thì “chưa gán”).
+
+### Quyết định cần chủ xác nhận (A4)
+1. **Chỉ lưu 4 số cuối** số tài khoản. Mẫu 01/BK-STK (A6/H9) cần số đầy đủ — sẽ bổ sung có kiểm soát truy cập khi làm tính năng đó.
+2. **Tài khoản mặc định**: tiền cũ chưa gắn tài khoản được tính vào tài khoản mặc định; nếu chưa có tài khoản ngân hàng mặc định, phần TK 112 cũ hiện ở dòng “chưa gán” cho tới khi tạo và đặt mặc định.
+3. **Phương thức vẫn chỉ `cash`/`bank`**; ví điện tử là phương thức `bank` với tài khoản loại `ewallet` (TK 112).
+4. **Số dư đầu kỳ** do chủ hộ nhập (Nợ 111/112 — Có 411); không chặn nhập nhiều lần (mỗi lần là một bút toán, có audit).
+5. **Chuyển tiền nội bộ cho nhân viên**; không bắt buộc đủ số dư (cảnh báo số dư âm ở trang Tiền & Quỹ).
+6. **Cờ “đã thông báo thuế” chỉ mang tính nhắc việc** — không khẳng định pháp lý; chủ/kế toán tự xác nhận với cơ quan thuế.
+7. **Chưa làm** (mục P1 của kế hoạch): kiểm kê quỹ tiền mặt, chủ hộ rút vốn, xuất mẫu 01/BK-STK.
