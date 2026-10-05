@@ -212,3 +212,73 @@ export function bkStkFileName(h: BookHeader, ext: "xlsx" | "pdf") {
   const today = h.createdOn;
   return bookFileName("01-BK-STK", h.taxCode, { from: today, to: today }, null, ext);
 }
+
+// ---------------------------------------------------------------- trang “Tờ khai thuế” (/books/tax-forms)
+
+export const TKN_KINDS: Array<{ value: TknPeriodKind; label: string }> = [
+  { value: "year", label: "Cả năm" },
+  { value: "h1", label: "6 tháng đầu (HKD mới)" },
+  { value: "h2", label: "6 tháng cuối (HKD mới)" },
+];
+
+export function parseTknKind(v: unknown): TknPeriodKind {
+  return v === "h1" || v === "h2" ? v : "year";
+}
+
+/** Năm mặc định của 01/TKN-CNKD: trước hạn 31/01 thì vẫn là năm trước (đang kê khai), sau đó là năm hiện tại (theo dõi). */
+export function defaultTknYear(today: string): number {
+  const y = Number(today.slice(0, 4));
+  return today.slice(5) <= "01-31" ? y - 1 : y;
+}
+
+export function parseTknYear(v: unknown, today: string): number {
+  const n = Number(v);
+  const cur = Number(today.slice(0, 4));
+  return Number.isInteger(n) && n >= 2020 && n <= cur ? n : defaultTknYear(today);
+}
+
+/** Số ngày còn lại tới hạn (âm = đã quá hạn). Ngày ISO yyyy-mm-dd, tính theo lịch, không theo giờ. */
+export function daysUntil(deadline: string, today: string): number {
+  const d = Date.UTC(+deadline.slice(0, 4), +deadline.slice(5, 7) - 1, +deadline.slice(8, 10));
+  const t = Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10));
+  return Math.round((d - t) / 86_400_000);
+}
+
+export type DeadlineInfo = { date: string; days: number; tone: "muted" | "warning" | "danger"; text: string };
+
+/** Nhắc hạn nộp 01/TKN-CNKD (kỳ chưa kết thúc → chỉ theo dõi). */
+export function tknDeadlineInfo(year: number, kind: TknPeriodKind, today: string): DeadlineInfo {
+  const date = tknDeadline(year, kind);
+  const days = daysUntil(date, today);
+  const periodEnd = tknPeriod(year, kind).period.to;
+  const dd = `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
+  if (today <= periodEnd) return { date, days, tone: "muted", text: `Kỳ chưa kết thúc — số liệu tạm tính. Hạn nộp: ${dd}.` };
+  if (days < 0) return { date, days, tone: "danger", text: `Đã quá hạn nộp ${dd} (${-days} ngày). Nếu chưa nộp, liên hệ cơ quan thuế/đại lý thuế.` };
+  if (days <= 30) return { date, days, tone: "warning", text: `Còn ${days} ngày đến hạn nộp ${dd}.` };
+  return { date, days, tone: "muted", text: `Hạn nộp: ${dd} (còn ${days} ngày).` };
+}
+
+/**
+ * Lưu ý về mẫu theo mức doanh thu năm (dùng `threshold_status` của A1 — cảnh báo ở warn_pct %, thường 80 %, và 100 %).
+ * Doanh thu năm vượt 1 tỷ thì mẫu “≤ 1 tỷ” không còn đúng: phải khai thuế theo quy định cho HKD trên ngưỡng.
+ */
+export function tknThresholdNote(level: "none" | "ok" | "warning" | "exceeded", pct: number | null): { tone: "info" | "warning" | "danger"; text: string } | null {
+  const p = pct === null ? "" : ` (${pct.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}% ngưỡng)`;
+  if (level === "exceeded") {
+    return { tone: "danger", text: `Doanh thu năm đã đạt/vượt ngưỡng 1 tỷ đồng${p}. Mẫu dưới đây chỉ dành cho HKD doanh thu ≤ 1 tỷ — không dùng để nộp; cần khai thuế GTGT/TNCN theo quy định cho HKD trên ngưỡng (hỏi kế toán thuế).` };
+  }
+  if (level === "warning") return { tone: "warning", text: `Doanh thu năm đã đạt${p} — gần ngưỡng 1 tỷ đồng. Theo dõi sát; nếu vượt ngưỡng trong năm, nghĩa vụ kê khai sẽ thay đổi.` };
+  if (level === "none") return { tone: "info", text: "Chưa cấu hình ngưỡng doanh thu cho năm này (bảng legal_thresholds) nên không kiểm tra được mức 1 tỷ." };
+  return null;
+}
+
+export type BkStkSummary = { pending: number; first: number; changed: number; closed: number; missing: number };
+export function bkStkSummary(rows: BkStkRow[]): BkStkSummary {
+  const s: BkStkSummary = { pending: 0, first: 0, changed: 0, closed: 0, missing: 0 };
+  for (const r of rows) {
+    if (r.status === "first" || r.status === "changed" || r.status === "closed") { s.pending++; s[r.status]++; if (r.missing.length) s.missing++; }
+  }
+  return s;
+}
+
+export const isBkPending = (r: BkStkRow) => r.status === "first" || r.status === "changed" || r.status === "closed";

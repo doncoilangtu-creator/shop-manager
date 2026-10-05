@@ -127,6 +127,10 @@ chk "đối chiếu sổ phụ vẫn bằng 0" "$(S "select bool_and(diff=0) fro
 step "8d. A5: sổ S1a-HKD sinh từ chứng từ khớp sổ cái"
 chk "S1a năm 2026 = doanh thu thuần sổ cái (511 − 521 + 3331 legacy)" "$(S "select diff = 0 and s1a_total <> 0 from public.book_s1a_check('2026-01-01','2026-12-31')")"
 chk "S1a tháng 10/2026 khớp sổ cái" "$(S "select diff = 0 from public.book_s1a_check('2026-10-01','2026-10-31')")"
+
+step "8e. A6: 01/TKN-CNKD tổng = S1a; 01/BK-STK (số TK đầy đủ chỉ owner)"
+chk "tổng [11] 01/TKN-CNKD năm 2026 = tổng S1a" "$(S "select (select revenue from public.tkn_cnkd_data(2026, null) where code = '11') = (select s1a_total from public.book_s1a_check('2026-01-01','2026-12-31'))")"
+chk "bk_stk_data chạy được (owner)" "$(S "select count(*) >= 0 from public.bk_stk_data('all')")"
 step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"
