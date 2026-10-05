@@ -25,7 +25,7 @@ type Inv = {
 type Line = { id: string; line_no: number; description: string | null; qty: number; unit_price: number; discount_pct: number; line_net: number; vat_amount: number; tax_group: string; vat_pct_snapshot: number | null; pit_pct_snapshot: number | null; products: { sku: string; name: string } | null };
 type Pay = { id: string; method: PaymentMethod; amount: number; note: string | null; money_accounts: { label: string; provider: string | null; account_no_masked: string | null } | null };
 type Ret = { id: string; return_no: string; return_date: string; total: number; ar_applied: number; refunded: number; cogs_total: number; reason: string | null; voided_at: string | null; sales_return_lines: Array<{ sale_line_id: string; qty: number; amount: number }> };
-type Einv = { id: string; kind: string; status: string; provider: string | null; symbol: string | null; number: string; lookup_code: string | null; lookup_url: string | null; issued_on: string; cancel_reason: string | null };
+type Einv = { id: string; kind: string; status: string; provider: string | null; symbol: string | null; number: string; lookup_code: string | null; lookup_url: string | null; issued_on: string; cancel_reason: string | null; replaces_id: string | null; cqt_code: string | null; pdf_url: string | null; adjust_amount: number | null; adjust_reason: string | null };
 
 const KIND: Record<string, string> = { original: "Hóa đơn gốc", replace: "Thay thế", adjust: "Điều chỉnh" };
 const STATUS: Record<string, string> = { issued: "Còn hiệu lực", cancelled: "Đã hủy", replaced: "Đã bị thay thế" };
@@ -43,7 +43,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
     sb.from("sales_invoice_lines").select("id, line_no, description, qty, unit_price, discount_pct, line_net, vat_amount, tax_group, vat_pct_snapshot, pit_pct_snapshot, products(sku, name)").eq("invoice_id", id).order("line_no"),
     sb.from("sale_payments").select("id, method, amount, note, money_accounts(label, provider, account_no_masked)").eq("sale_id", id).order("created_at"),
     sb.from("sales_returns").select("id, return_no, return_date, total, ar_applied, refunded, cogs_total, reason, voided_at, sales_return_lines(sale_line_id, qty, amount)").eq("sale_id", id).order("created_at"),
-    sb.from("einvoices").select("id, kind, status, provider, symbol, number, lookup_code, lookup_url, issued_on, cancel_reason").eq("sale_id", id).order("created_at"),
+    sb.from("einvoices").select("id, kind, status, provider, symbol, number, lookup_code, lookup_url, issued_on, cancel_reason, replaces_id, cqt_code, pdf_url, adjust_amount, adjust_reason").eq("sale_id", id).order("created_at"),
     sb.from("v_sales_invoice_open").select("outstanding").eq("invoice_id", id).maybeSingle(),
     sb.from("tax_groups").select("code, name_vi"),
   ]);
@@ -137,11 +137,16 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 {formatDate(e.issued_on)}{e.provider ? ` · ${e.provider}` : ""}{e.lookup_code ? ` · Mã tra cứu: ${e.lookup_code}` : ""}
                 {e.lookup_url && /^https?:\/\//i.test(e.lookup_url) ? <> · <a className="underline" href={e.lookup_url} target="_blank" rel="noopener noreferrer">Tra cứu</a></> : null}
                 {e.cancel_reason ? ` · Lý do hủy: ${e.cancel_reason}` : ""}
+                {e.cqt_code ? ` · Mã CQT: ${e.cqt_code}` : ""}
+                {e.pdf_url && /^https?:\/\//i.test(e.pdf_url) ? <> · <a className="underline" href={e.pdf_url} target="_blank" rel="noopener noreferrer">PDF</a></> : null}
+                {e.replaces_id ? (() => { const o = E.find((x) => x.id === e.replaces_id); return o ? ` · ${e.kind === "adjust" ? "Điều chỉnh cho" : "Thay thế cho"}: ${o.symbol ? `${o.symbol} · ` : ""}${o.number}` : ""; })() : ""}
+                {e.kind === "adjust" && e.adjust_amount != null ? ` · Điều chỉnh: ${Number(e.adjust_amount) > 0 ? "+" : ""}${formatVND(Number(e.adjust_amount))}` : ""}
+                {e.adjust_reason ? ` · Lý do: ${e.adjust_reason}` : ""}
               </div>
               {e.status === "issued" && e.kind !== "adjust" && !inv.voided_at && <div className="mt-2"><CancelEinvoiceButton saleId={inv.id} einvoiceId={e.id} /></div>}
             </div>
           ))}
-          {!inv.voided_at && <EinvoiceForm saleId={inv.id} hasActive={!!activeEinv} />}
+          {!inv.voided_at && <EinvoiceForm saleId={inv.id} hasActive={!!activeEinv} invoices={E.map((e) => ({ id: e.id, kind: e.kind, status: e.status, symbol: e.symbol, number: e.number, replaces_id: e.replaces_id }))} />}
         </Card>
       </div>
 
