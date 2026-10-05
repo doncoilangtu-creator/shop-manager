@@ -22,13 +22,16 @@ export function registerStartCommand(bot: Bot) {
       await ctx.reply(
         "👋 Chào anh chủ shop!\n\n" +
           "Các lệnh:\n" +
-          "  /ton — Sản phẩm sắp hết hàng\n" +
-          "  /nhap <NCC> <SKU> <SL> <giá nhập> [số chứng từ] — Nhập hàng có chứng từ (phiếu mua)\n" +
-          "  /ban <khách/SĐT> <SKU> <SL> — Bán nhanh (ghi hóa đơn, trừ kho)\n" +
+          "  /tien — Số dư tiền mặt / NH / ví (A4)\n" +
+          "  /ton [sku|tên] — Tồn kho (sắp hết + top; hoặc tìm SP)\n" +
+          "  /ban [tm|ck] SKU:SL … — Bán nhanh (thu đủ ngay)\n" +
+          "  /baogia — Báo giá gần đây; /baogia tao … — tạo nháp\n" +
+          "  /nhap <NCC> <SKU> <SL> <giá nhập> [số chứng từ] — Nhập hàng có chứng từ\n" +
           "  /khach <từ khóa> — Tìm khách\n" +
           "  /baotri — Lịch bảo trì 7 ngày tới\n" +
           "  /doanhthu YYYY-MM — Doanh thu tháng\n" +
-          "  /top — Top 10 SP bán chạy",
+          "  /top — Top 10 SP bán chạy\n\n" +
+          "Gõ /ban hoặc /baogia không đối số để xem cú pháp chi tiết.",
       );
     } else {
       await ctx.reply(

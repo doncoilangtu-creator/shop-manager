@@ -198,6 +198,104 @@ describe("owner flows", () => {
     expect(out[0]).toContain("A &amp; B");
   });
 
+  it("/ban accepts bán-nhanh style tm SKU:qty", async () => {
+    fake = makeFakeSupabase({ tables: BAN_TABLES(), rpcs: { post_sale_hkd: SALE_OK } });
+    const out = texts(await run("/ban tm HP-1234:2", 1, OWNER));
+    expect(fake.rpcCalls[0].args).toMatchObject({
+      p_customer_id: null,
+      p_payments: [{ method: "cash", amount: 500000, note: "Thu ngay qua bot" }],
+      p_lines: [{ product_id: "p1", qty: 2, unit_price: 250000 }],
+    });
+    expect(out[0]).toContain("tiền mặt (TK 111)");
+  });
+
+  it("/tien lists active money account balances from money_balances", async () => {
+    fake = makeFakeSupabase({
+      rpcs: {
+        money_balances: {
+          data: [
+            { account_id: "a1", kind: "cash", label: "TM", provider: null, gl_account: "111", active: true, balance: 56567000, unassigned: false },
+            { account_id: "a2", kind: "bank", label: "VCB", provider: "Vietcombank", gl_account: "112", active: true, balance: 238430000, unassigned: false },
+            { account_id: "a3", kind: "ewallet", label: "MoMo", provider: "MoMo", gl_account: "112", active: true, balance: 11980000, unassigned: false },
+          ],
+          error: null,
+        },
+      },
+    });
+    const out = texts(await run("/tien", 1, OWNER));
+    expect(fake.rpcCalls[0]).toEqual({ fn: "money_balances", args: { p_as_of: null } });
+    expect(out[0]).toContain("TM");
+    expect(out[0]).toContain("VCB");
+    expect(out[0]).toContain("MoMo");
+    expect(out[0]).toContain("/money");
+  });
+
+  it("/ton with no arg shows low stock + top in-stock", async () => {
+    fake = makeFakeSupabase({
+      tables: {
+        low_stock_products: { data: [{ sku: "A", name: "Low", stock_qty: 1, min_stock: 5 }], error: null },
+        products: { data: [{ sku: "B", name: "Plenty", stock_qty: 40, sell_price: 1000 }], error: null },
+      },
+    });
+    const out = texts(await run("/ton", 1, OWNER));
+    expect(out[0]).toContain("sắp hết");
+    expect(out[0]).toContain("Top tồn kho");
+    expect(out[0]).toContain("Plenty");
+  });
+
+  it("/baogia lists recent quotations", async () => {
+    fake = makeFakeSupabase({
+      tables: {
+        quotations: {
+          data: [{ id: "q1", code: "BG-1", status: "draft", total: 500000, valid_until: "2026-11-01", created_at: "2026-10-01", customers: { name: "Công ty A" } }],
+          error: null,
+        },
+      },
+    });
+    const out = texts(await run("/baogia", 1, OWNER));
+    expect(out[0]).toContain("BG-1");
+    expect(out[0]).toContain("Nháp");
+    expect(out[0]).toContain("/quotations/q1");
+  });
+
+  it("/baogia tao creates a draft via save_quotation", async () => {
+    fake = makeFakeSupabase({
+      tables: {
+        customers: { data: [{ id: "c1", name: "Cong ty ABC", phone: "0901" }], error: null },
+        products: {
+          data: [
+            { id: "p1", sku: "HP-1234", name: "Chuột", sell_price: 250000, stock_qty: 10, min_stock: 1 },
+            { id: "p2", sku: "KB-1", name: "Bàn phím", sell_price: 400000, stock_qty: 3, min_stock: 1 },
+          ],
+          error: null,
+        },
+      },
+      rpcs: {
+        save_quotation: (args: Record<string, unknown>) => ({
+          data: { id: "q-new", total: 900000, items: 2 },
+          error: null,
+        }),
+      },
+    });
+    const out = texts(await run('/baogia tao "Cong ty ABC" HP-1234:2 KB-1:1', 1, OWNER));
+    expect(fake.rpcCalls).toHaveLength(1);
+    expect(fake.rpcCalls[0].fn).toBe("save_quotation");
+    expect(fake.rpcCalls[0].args).toMatchObject({
+      p_id: null,
+      p_customer_id: "c1",
+      p_status: "draft",
+      p_discount: 0,
+      p_vat_rate: 0,
+      p_items: [
+        { product_id: "p1", qty: 2, unit_price: 250000, discount: 0, notes: null },
+        { product_id: "p2", qty: 1, unit_price: 400000, discount: 0, notes: null },
+      ],
+    });
+    expect(String(fake.rpcCalls[0].args.p_code)).toMatch(/^BG-/);
+    expect(out[0]).toContain("Báo giá nháp");
+    expect(out[0]).toContain("/quotations/q-new");
+  });
+
   it("customers cannot run owner commands", async () => {
     fake = makeFakeSupabase({});
     const out = texts(await run("/nhap Cty HP-1 5 100", 2, CUST));
