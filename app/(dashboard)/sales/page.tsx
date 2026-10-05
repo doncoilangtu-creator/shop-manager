@@ -41,7 +41,10 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <h1 className="text-2xl font-semibold tracking-tight">Bán hàng</h1>
           <p className="text-sm text-muted-foreground">Đơn bán theo chế độ hộ kinh doanh: giá đã gồm thuế, không tách VAT. Thu tiền ngay hoặc ghi công nợ cho khách có tên.</p>
         </div>
-        <Button asChild><Link href="/sales/new"><Plus className="mr-2 h-4 w-4" />Bán hàng</Link></Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="default"><Link href="/ban-nhanh"><Plus className="mr-2 h-4 w-4" />Bán nhanh</Link></Button>
+          <Button asChild variant="outline"><Link href="/sales/new">Bán hàng (form đầy đủ)</Link></Button>
+        </div>
       </div>
       <div className="flex gap-2 text-sm">
         <Button asChild size="sm" variant={missingOnly ? "outline" : "secondary"}><Link href="/sales">Tất cả</Link></Button>
