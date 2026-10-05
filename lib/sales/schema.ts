@@ -38,17 +38,50 @@ export const salePaymentSchema = z.object({
   money_account_id: z.preprocess((v) => (v === "" ? null : v), z.string().uuid("Tài khoản tiền không hợp lệ").nullable().optional()),
 });
 
-export const einvoiceSchema = z.object({
-  kind: z.enum(["original", "replace", "adjust"]).default("original"),
+const blankToNull = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
+const httpUrl = (msg: string) => z.preprocess(blankToNull, z.string().trim().max(500, "Đường dẫn tối đa 500 ký tự").regex(/^https?:\/\//i, msg).nullable().optional());
+
+export const EINVOICE_KINDS = ["original", "replace", "adjust"] as const;
+export type EinvoiceKind = (typeof EINVOICE_KINDS)[number];
+export const EINVOICE_KIND_LABEL: Record<EinvoiceKind, string> = { original: "Ghi mới", replace: "Thay thế", adjust: "Điều chỉnh" };
+
+/** Thông tin HĐĐT do nhà cung cấp bên ngoài phát hành. Các trường mới đều tùy chọn → form ghi mới cũ vẫn hợp lệ. */
+export const einvoiceBaseSchema = z.object({
+  kind: z.enum(EINVOICE_KINDS, { errorMap: () => ({ message: "Loại hóa đơn điện tử không hợp lệ" }) }).default("original"),
   provider: text(100),
-  symbol: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), z.string().trim().regex(/^[A-Za-z0-9]{1,15}$/, "Ký hiệu hóa đơn chỉ gồm chữ và số (tối đa 15 ký tự)").nullable().optional()),
+  symbol: z.preprocess(blankToNull, z.string().trim().regex(/^[A-Za-z0-9]{1,15}$/, "Ký hiệu hóa đơn chỉ gồm chữ và số (tối đa 15 ký tự)").nullable().optional()),
   number: z.string({ required_error: "Nhập số hóa đơn điện tử" }).trim().regex(/^[A-Za-z0-9/_-]{1,30}$/, "Số hóa đơn chỉ gồm chữ, số, / _ - (tối đa 30 ký tự)"),
   lookup_code: text(100),
-  lookup_url: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), z.string().trim().max(500).regex(/^https?:\/\//i, "Đường dẫn tra cứu phải bắt đầu bằng http:// hoặc https://").nullable().optional()),
+  lookup_url: httpUrl("Đường dẫn tra cứu phải bắt đầu bằng http:// hoặc https://"),
   issued_on: z.preprocess((v) => (v === "" ? null : v), dateStr.nullable().optional()),
   note: text(500),
   return_id: z.preprocess((v) => (v === "" ? null : v), z.string().uuid().nullable().optional()),
+  // ---- thay thế / điều chỉnh (0019)
+  replaces_id: z.preprocess(blankToNull, z.string().uuid("Hóa đơn gốc không hợp lệ").nullable().optional()),
+  cqt_code: z.preprocess(blankToNull, z.string().trim().regex(/^[A-Za-z0-9-]{1,50}$/, "Mã của cơ quan thuế chỉ gồm chữ, số và dấu - (tối đa 50 ký tự)").nullable().optional()),
+  pdf_url: httpUrl("Đường dẫn PDF phải bắt đầu bằng http:// hoặc https://"),
+  adjust_amount: z.preprocess(
+    (v) => (v === "" || v === undefined ? null : typeof v === "string" ? v.replace(/[\s.,](?=\d{3}(\D|$))/g, "") : v),
+    z.coerce.number({ invalid_type_error: "Số tiền điều chỉnh không hợp lệ" }).finite("Số tiền điều chỉnh không hợp lệ").min(-1e13).max(1e13).nullable().optional(),
+  ),
+  adjust_reason: text(500),
 });
+
+export const einvoiceSchema = einvoiceBaseSchema
+  .superRefine((v, ctx) => {
+    if (v.kind === "adjust") {
+      if (v.adjust_amount == null || v.adjust_amount === 0)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["adjust_amount"], message: "Nhập số tiền điều chỉnh khác 0 (âm = giảm, dương = tăng)" });
+      if (!v.adjust_reason || v.adjust_reason.length < 5)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["adjust_reason"], message: "Nhập lý do điều chỉnh (ít nhất 5 ký tự)" });
+    }
+  })
+  .transform((v) => {
+    // Bỏ các trường không thuộc loại đã chọn để RPC không nhận dữ liệu thừa.
+    if (v.kind === "original") return { ...v, replaces_id: null, adjust_amount: null, adjust_reason: null, return_id: null };
+    if (v.kind === "replace") return { ...v, adjust_amount: null, adjust_reason: null, return_id: null };
+    return { ...v, adjust_amount: v.adjust_amount == null ? null : round2(v.adjust_amount) };
+  });
 export type EinvoiceInput = z.infer<typeof einvoiceSchema>;
 
 export const buyerSchema = z.object({ name: text(255), tax_code: text(20), address: text(500), email: text(255) });

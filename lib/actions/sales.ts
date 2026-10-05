@@ -63,14 +63,27 @@ export async function createSaleAction(payload: unknown): Promise<ActionResult<S
   };
 }
 
-/** Lưu thông tin hóa đơn điện tử (số, ký hiệu, mã tra cứu) do nhà cung cấp bên ngoài phát hành. Không gọi API nhà cung cấp. */
+/**
+ * Lưu thông tin hóa đơn điện tử (số, ký hiệu, mã tra cứu, mã CQT, PDF) do nhà cung cấp bên ngoài phát hành. Không gọi API nhà cung cấp.
+ * Một action cho cả 3 loại: kind = original (ghi mới) | replace (thay thế, replaces_id = hóa đơn gốc còn hiệu lực hoặc đã hủy)
+ * | adjust (điều chỉnh, replaces_id + adjust_amount ≠ 0 + adjust_reason). RPC record_sale_einvoice (0019) kiểm tra lại; lỗi → tiếng Việt.
+ */
 export async function recordEinvoiceAction(saleId: string, payload: unknown): Promise<ActionResult> {
   const auth = await requireUser();
   if (!auth.ok) return auth;
   if (!z.string().uuid().safeParse(saleId).success) return { ok: false, error: "Đơn bán không hợp lệ" };
   const parsed = einvoiceSchema.safeParse(payload);
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
-  const { error } = await auth.supabase.rpc("record_sale_einvoice", { p_sale_id: saleId, p: parsed.data });
+  const d = parsed.data;
+  const { error } = await auth.supabase.rpc("record_sale_einvoice", {
+    p_sale_id: saleId,
+    p: {
+      kind: d.kind, number: d.number, symbol: d.symbol ?? null, provider: d.provider ?? null, lookup_code: d.lookup_code ?? null,
+      lookup_url: d.lookup_url ?? null, issued_on: d.issued_on ?? null, note: d.note ?? null, return_id: d.return_id ?? null,
+      replaces_id: d.replaces_id ?? null, cqt_code: d.cqt_code ?? null, pdf_url: d.pdf_url ?? null,
+      adjust_amount: d.adjust_amount ?? null, adjust_reason: d.adjust_reason ?? null,
+    },
+  });
   if (error) return { ok: false, error: accountingErrorMessage(error.message) };
   refresh(saleId);
   return { ok: true, data: undefined };
