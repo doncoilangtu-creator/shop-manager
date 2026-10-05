@@ -136,6 +136,10 @@ step "8e. A6: 01/TKN-CNKD tổng = S1a; 01/BK-STK (số TK đầy đủ chỉ ow
 chk "tổng [11] 01/TKN-CNKD năm 2026 = tổng S1a" "$(S "select (select revenue from public.tkn_cnkd_data(2026, null) where code = '11') = (select s1a_total from public.book_s1a_check('2026-01-01','2026-12-31'))")"
 chk "bk_stk_data chạy được (owner)" "$(O "select count(*) >= 0 from public.bk_stk_data('all')")"
 chk "bk_stk_data bị chặn với service_role/nhân viên (chỉ owner)" "$(S "select 1 from public.bk_stk_data('all')" >/dev/null 2>&1 && echo f || echo t)"
+step "8f. A7: gói hồ sơ kiểm tra"
+chk "book_s1a_check diff=0 (điều kiện gói hồ sơ)" "$(S "select diff = 0 from public.book_s1a_check('2026-01-01','2026-12-31')")"
+chk "record_book_export kind audit_pack (owner) thành công" "$(O "select public.record_book_export(jsonb_build_object('kind','audit_pack','period_from','2026-01-01','period_to','2026-12-31','location_id','','format','zip','file_name','AuditPack_2026.zip','sha256',repeat('cd',32),'row_count',6,'total',0,'template_version','audit_pack/v1')) is not null")"
+
 step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"
