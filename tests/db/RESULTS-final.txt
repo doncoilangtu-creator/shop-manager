@@ -1,0 +1,207 @@
+ID                 KIND      VERDICT           DETAIL
+------------------ --------- ----------------- ------
+F3a                weakness  NOT_REPRODUCIBLE  anon SELECT with no filter returned 0 token rows (incl. tokens of another ticket: 0); valid token visible=f
+F3a-ctl1           control   OK                expired token hidden from anon (policy filter works)
+F3a-ctl2           control   OK                used token hidden from anon (policy filter works)
+F3b                weakness  NOT_REPRODUCIBLE  anon INSERT into signatures for a ticket with no token: rejected (permission denied for table signatures)
+F3b-used           weakness  NOT_REPRODUCIBLE  anon can sign a ticket whose token was already used (token never checked by DB)
+F3b-tech           weakness  NOT_REPRODUCIBLE  anon can insert signer_role=technician (forged technician signature)
+F3b-spoof          weakness  NOT_REPRODUCIBLE  anon can set arbitrary signed_at/ip_address (evidence fields client-controlled)
+F3b-ctl1           control   OK                anon cannot SELECT signatures (no anon select policy)
+F3b-ret            info      INFO              anon INSERT ... RETURNING: fails (sqlstate 42501). With PostgREST default return=minimal the plain insert works.
+F7-unique          weakness  NOT_REPRODUCIBLE  unique(ticket_id,signer_role) exists=t; two customer signatures on same ticket inserted (privileged)=f; third inserted by anon=f
+F7-size            weakness  NOT_REPRODUCIBLE  privileged insert of a 5 MB signature_png: rejected (CHECK on length)
+F3c                weakness  NOT_REPRODUCIBLE  logged-in owner can sign via [sign_ticket() as service_role]: yes
+RLS-readall        weakness  NOT_REPRODUCIBLE  arbitrary authenticated uid (not staff) read customers=0 bot_users(telegram ids)=0 signature_tokens=0
+RLS-staff-ctl      control   OK                staff user reads customers (2 rows)
+RLS-cascade        weakness  NOT_REPRODUCIBLE  staff DELETE customer rows=0 [update or delete on table "customers" violates foreign key constraint "maintenance_tickets_customer_id_fkey" on table "maintenance_tickets"] (left: tickets=1 signatures=1 contracts=1)
+RLS-nowrite        info      INFO              staff on maintenance_tickets: insert allowed=f, update rows affected=0 (ticket writes only via service-role admin client). Control: staff can insert products=t (policy from 0002)
+RLS-nowrite-ctl    control   OK                write policies exist exactly for the 5 tables of 0002 and not for maintenance_tickets
+ANON-read-ctl      control   OK                anon sees 0 rows in every other public table
+ANON-insert-ctl    control   OK                anon cannot insert into customers/products/notifications/bot_users/categories/quotations/signature_tokens
+SVC-bypass-ctl     control   OK                service_role reads RLS-protected table (BYPASSRLS), as the admin client does
+ANON-policies      info      INFO              anon policies: none
+F7-stock           weakness  NOT_REPRODUCIBLE  stock_qty set to 5 directly by authenticated; stock_movements rows for product=1 (no CHECK stock_qty>=0, no ledger trigger)
+F6-qtytype         weakness  NOT_REPRODUCIBLE  stock_movements.qty=integer(32,0) vs products.stock_qty=integer; 10 + 1.5 stored as 12 (silent rounding); movement qty 1.5 stored as 2
+QUO-checks         weakness  NOT_REPRODUCIBLE  quotation_items accepted qty=-5, discount>>price, line_total unrelated to qty*price=f; quotations.total not tied to items= (no CHECK/trigger)
+F12-status         weakness  NOT_REPRODUCIBLE  ticket moved closed -> closed with a plain UPDATE; no transition trigger/CHECK (state machine lives only in app code, in 2 divergent copies)
+F13-contract       weakness  NOT_REPRODUCIBLE  contract with end_date < start_date accepted=f; negative monthly_fee/sla_hours accepted=f
+F14-literal-info   info      INFO              SQL `stock_qty <= 'min_stock'` -> 22P02 (still invalid SQL; the app must not use it)
+F14-lowstock       weakness  NOT_REPRODUCIBLE  low-stock view check: view ok (product stock 0 <= min_stock 5 must be listed)
+F14-lowstock-ctl   control   OK                the correct column-vs-column comparison `stock_qty <= min_stock` runs fine
+TRG-updated_at-ctl control   OK                set_updated_at trigger overrides updated_at on UPDATE
+TOKEN-unique-ctl   control   OK                signature_tokens.token is UNIQUE (duplicate rejected)
+MIG-idempotent     control   OK                compat + 0001 + 0002 + seed re-applied (seed 2x) without error
+SIGN-first         control   OK                first signature moves completed -> awaiting_signature (rpc=awaiting_signature, row=awaiting_signature)
+SIGN-token-consumed control   OK                used token + all other unused tokens of the ticket consumed (2 of 2)
+SIGN-reuse         control   OK                reusing a consumed token -> token_used
+SIGN-both          control   OK                second role -> signed: signed
+SIGN-ticket-final  control   OK                signing a signed ticket again -> ticket_not_signable
+SIGN-dup-role      control   OK                same role twice -> already_signed
+SIGN-expired       control   OK                token_expired
+SIGN-mismatch      control   OK                token_ticket_mismatch
+SIGN-unknown       control   OK                token_not_found
+SIGN-toolarge      control   OK                signature_too_large
+SIGN-notready      control   OK                ticket still in "received": ticket_not_signable
+SIGN-anon-denied   control   OK                anon: permission denied for function sign_ticket
+SIGN-staff-denied  control   OK                authenticated staff (must go through the API route): permission denied for function sign_ticket
+SIGN-immutable-upd control   OK                signatures are immutable (append-only evidence)
+SIGN-immutable-del control   OK                signatures are immutable (append-only evidence)
+SIGN-ticket-delete-blocked control   OK                deleting a ticket that has signatures: update or delete on table "maintenance_tickets" violates foreign key constraint 
+STK-opening        control   OK                product created with stock 5 -> 1 opening movement, stock_qty=5
+STK-in-out         control   OK                5 +10 -3 = 12
+STK-insufficient   control   OK                out 100 with 12 on hand -> insufficient_stock
+STK-neg-qty        control   OK                in with qty -1 -> qty_invalid
+STK-adjust-below-zero control   OK                adjust -20 -> insufficient_stock
+STK-direct-update  control   OK                direct UPDATE of stock_qty -> products.stock_qty/stock_value can only change through stock_movements
+STK-update-other-cols control   OK                updating other columns still works: OK
+STK-no-direct-ledger-insert control   OK                staff direct INSERT into stock_movements -> new row violates row-level security policy for table "stock_movements"
+STK-invariant      control   OK                stock_qty=10 equals ledger sum, mismatching products=0
+STK-ledger-no-update control   OK                stock_movements is append-only (use a compensating "adjust" movement)
+STK-ledger-no-delete control   OK                stock_movements is append-only (use a compensating "adjust" movement)
+STK-product-delete-blocked control   OK                deleting a product that has ledger rows -> update or delete on table "products" violates foreign key co
+STK-nonstaff-denied control   OK                non-staff authenticated -> forbidden
+STK-anon-denied    control   OK                anon -> permission denied for function stock_adjust
+STK-service-ok     control   OK                service_role (bot/admin client) allowed
+QUO-create-totals  control   OK                {"id": "f92c59c0-694a-444e-83d7-5cfd3d9d9dac", "vat": 220000.00, "items": 2, "total": 2420000.00, "discount": 100000.00, "subtotal": 2300000.00}
+QUO-update-atomic  control   OK                invalid 2nd line -> item_invalid; items still 2, total still 2420000.00 (nothing lost)
+QUO-update-replace control   OK                draft update replaces items: 1 item(s), total 3000.00
+QUO-dup-code       control   OK                duplicate code -> duplicate key value violates unique constraint "quotations_c
+QUO-not-draft      control   OK                quotation_not_draft
+QUO-empty-items    control   OK                items_required
+QUO-nonstaff-denied control   OK                non-staff -> new row violates row-level security policy for table "quotations"
+QUO-check-line     control   OK                quotation_not_draft: items are frozen after sending
+QUO-check-total    control   OK                quotation_not_draft: content is frozen after sending
+TKT-matrix         control   OK                64 transitions checked, mismatches=0 
+TKT-skip-blocked   control   OK                received -> signed: invalid ticket status transition received -> signed
+TKT-other-update-ok control   OK                non-status updates unaffected
+MIG-legacy-reconcile control   OK                legacy stock 7 (no ledger) and 4 (ledger said 3) reconciled by adjust rows; stock unchanged, mismatch view empty, existing auth user -> staff [row: 7|7|4|0|3|1]
+MIG-legacy-dupsig  control   OK                duplicate signatures -> migration aborts with a clear message and rolls back completely (app_users not created)
+MIG-legacy-fracqty control   OK                fractional ledger qty -> migration aborts instead of silently rounding
+CONC-stock         control   OK                4x25 parallel IN -> stock=100 (expect 100); 2x60 parallel OUT against 100 units -> stock=0, out-movements=100 (expect 0 / 100: 20 rejected as insufficient_stock); ledger mismatch rows=0
+CONC-sign          control   OK                two parallel signatures for the same role with different tokens -> signatures=1 (expect exactly 1), loser got already_signed/token_used
+LED-unbalanced-rpc control   OK                unbalanced: debit 100 <> credit 99
+LED-line-both-sides control   OK                line_invalid: exactly one of debit/credit must be > 0
+LED-one-line       control   OK                lines_required
+LED-unknown-account control   OK                insert or update on table "journal_lines" violates foreign key constraint "journ
+LED-131-needs-customer control   OK                customer_required_for_131
+LED-customer-only-131 control   OK                customer_only_on_131
+LED-331-needs-supplier control   OK                supplier_required_for_331
+LED-direct-unbalanced control   OK                unbalanced journal entry 00000000-0000-0000-0000-00000000aa01: debit 100.00 <> credit 90.0
+LED-direct-no-lines control   OK                journal entry 00000000-0000-0000-0000-00000000aa02 needs at least 2 lines
+LED-no-update      control   OK                ledger is append-only: UPDATE on journal_lines is not allowed (post a 
+LED-no-delete      control   OK                ledger is append-only: DELETE on journal_entries is not allowed (post 
+LED-no-truncate    control   OK                ledger is append-only: TRUNCATE on journal_lines is not allowed (post 
+LED-staff-no-direct-insert control   OK                permission denied for table journal_entries
+LED-anon-denied    control   OK                permission denied for function post_journal
+LED-nonstaff-denied control   OK                forbidden
+LED-reverse-twice  control   OK                already_reversed
+LED-reverse-of-reversal control   OK                cannot_reverse_a_reversal
+LED-reversal-mirror control   OK                reversal has 3 lines, mirrors the original, dated 2025-03-20, links reverses_id
+LED-reversal-nets-to-zero control   OK                after reversal: 131=0.00 511=0.00 3331=0.00 111=50000000.00
+LED-trial-balance  control   OK                trial balance debit=50002200.00 credit=50002200.00
+LED-entry-numbering control   OK                entry numbers unique and formatted JE-YYYY-NNNNNN
+PER-staff-cannot-close control   OK                staff: forbidden
+PER-sequential     control   OK                closing Feb while Jan (with entries) is open: earlier_period_open
+PER-close          control   OK                {"year": 2025, "month": 1, "status": "closed", "period_debit": 1000.00, "period_credit": 1000.00}
+PER-snapshot       control   OK                trial-balance snapshot rows frozen at close: 2 (111 and 411)
+PER-close-twice    control   OK                already_closed
+PER-closed-blocks-entry control   OK                new entry dated in closed January: period_closed
+PER-no-partial-write control   OK                nothing persisted from the blocked entry
+PER-reversal-into-closed control   OK                reversal dated in the closed period: period_closed
+PER-reversal-into-open control   OK                reversal of a closed-period entry posts into the open February
+PER-direct-insert-blocked control   OK                privileged direct insert into closed period: period_closed
+PER-reopen-order   control   OK                reopen Jan while Feb is closed: later_period_closed
+PER-reopen-needs-reason control   OK                reason_required
+PER-reopen-reclose control   OK                reopened, posted, re-closed; 2 snapshots kept (history append-only)
+PER-audit          control   OK                audit rows: 4 (3 closes + 1 reopen = 4; failed attempts are not logged)
+PER-audit-immutable control   OK                ledger is append-only: DELETE on accounting_audit is not all
+ACC-purchase       control   OK                bill total 11000000.00; stock 10 value 10000000.00; GL 156=10000000.00 133=1000000.00 331=11000000.00
+ACC-recon-1        control   OK                subledgers == GL after purchase
+ACC-dup-supplier-ref control   OK                same supplier invoice number twice -> duplicate key value violates unique constraint "uq_pb_supplier_ref"
+ACC-sale-amounts   control   OK                invoice total 6600000.00 cogs 4000000.00; stock 6 value 6000000.00
+ACC-sale-gl        control   OK                GL after sale: 131=6600000.00 511=6000000.00 3331=600000.00 632=4000000.00 156=6000000.00
+ACC-sale-entry-balanced control   OK                single entry: Dr 131 6.6M + Dr 632 4.0M = Cr 511 6.0M + Cr 3331 0.6M + Cr 156 4.0M
+ACC-recon-2        control   OK                reconciliation after sale
+ACC-invoice-no     control   OK                INV-2025-000001
+ACC-moving-average control   OK                avg-cost sale: cogs 3375000.00 (expect 3,375,000); stock 13 value 14625000.00 (expect 13 / 14,625,000); total 5832000.00 (discount 10% + VAT 8%)
+ACC-recon-3        control   OK                reconciliation + stock value mismatch view empty
+ACC-oversell-blocked control   OK                selling 14 of 13: insufficient_stock: P-08a18b9d (have 13, need 14) ; no journal/stock rows left behind
+ACC-receipt-allocated control   OK                invoice 1 outstanding 3600000.00 (expect 3,600,000); bank 112=3000000.00; AR 131=9432000.00
+ACC-ar-balance     control   OK                customer AR subledger 9432000.00 = GL 9432000.00 (expect 9,432,000)
+ACC-overallocate-invoice control   OK                allocation_exceeds_outstanding: 3600001 > 3600000.00
+ACC-overallocate-payment control   OK                allocation_exceeds_payment: 2000 > 1000.00
+ACC-allocate-other-customer control   OK                receipt of another customer against this invoice: invoice_not_found_for_customer
+ACC-unapplied      control   OK                receipt without allocation keeps unapplied credit
+ACC-allocate-later control   OK                later allocation settles invoice 2
+ACC-recon-4        control   OK                reconciliation after receipts
+ACC-void-blocked-by-allocation control   OK                invoice_has_allocations
+ACC-void-restores-stock-at-cost control   OK                after voiding invoice 1: stock 17 value 18625000.00 (expect 17 / 18,625,000 = original cost restored); reconciliation ok=t
+ACC-void-twice     control   OK                already_voided
+ACC-void-ar        control   OK                AR after voiding invoice 1 and receipt 1 and paying invoice 2: 0.00
+ACC-void-immutable control   OK                documents cannot be edited/deleted (only the void marker may be set by reverse_*)
+ACC-ap             control   OK                bill 1 outstanding 6000000.00; supplier AP 18000000.00
+ACC-vat-report     control   OK                May VAT: output 432000.00 input 1000000.00 payable -568000.00 (negative = carry forward credit)
+ACC-vat-by-rate    control   OK                vat_by_rate lists output 8% and input 10% / 0% (voided documents excluded)
+ACC-debt-limit     control   OK                AR 0 + 7.5M > limit 5M -> debt_limit_exceeded
+ACC-debt-limit-override control   OK                override flag allows it
+ACC-service-line   control   OK                service line: revenue + VAT, no COGS / no stock
+ACC-void-purchase-ok control   OK                voiding bill 2 (stock 12 -> 2) -> OK
+ACC-void-purchase-needs-stock control   OK                goods already sold -> insufficient_stock_to_void: product 01a502f6-c587-4f17-92d4-cb7bd402fc
+ACC-nonstaff-denied control   OK                forbidden
+ACC-anon-denied    control   OK                permission denied for function post_receipt
+ACC-final-recon    control   OK                AR 131 vs open invoices - unapplied receipts=0.00; AP 331 vs open bills - unapplied disbursements=0.00; Inventory 156 vs sum(stock_value)=0.00; Trial balance debit vs credit=0.00
+ADJ-baseline       control   OK                inventory GL = stock value after flush, diff=0.00
+ADJ-gap-visible    control   OK                unposted stock movements appear in reconciliation: diff=-4500000.00 (expect -4,500,000)
+ADJ-posted         control   OK                posted=2 gain=5000000.00 loss=500000.00; 711=5000000.00 811=500000.00; diff=0.00
+ADJ-idempotent     control   OK                second call posts nothing
+ADJ-anon           control   OK                permission denied for function post_stock_adjustments
+ACC-CONC-sales     control   OK                18 parallel sale attempts on 10 units -> invoices=10 (expect 10), stock/value=0/0.00 (expect 0/0.00), numbering gaps=0, reconciliation diffs=0
+ACC-CONC-close     control   OK                two parallel close_period(2025,9) -> closed periods=1 (expect 1), duplicated snapshot rows=0, loser errors=1
+CNT-decrease       control   OK                count 7 of 10 -> delta -3, stock 7 value 700000.00 (expect -3 / 7 / 700,000)
+CNT-noop           control   OK                same count -> no movement written
+CNT-increase       control   OK                count 12 -> +5; 2 stocktake movements recorded
+CNT-negative       control   OK                qty_invalid
+CNT-unknown-product control   OK                product_not_found
+CNT-stock-card     control   OK                running_qty on the newest card row = 12
+CNT-nonstaff       control   OK                forbidden
+CNT-anon           control   OK                permission denied for function stock_count
+FIFO-receipt       control   OK                3.5M against 1M/2M/3M -> outstanding 0.00 / 0.00 / 2500000.00 (expect 0 / 0 / 2.5M)
+FIFO-overpay-unapplied control   OK                4M against 2.5M open -> unapplied 1500000.00, AR balance -1500000.00 (credit)
+FIFO-disbursement  control   OK                107,000 against bills 100,000 (older) then 5,000 and 15,000 -> outstanding 0.00 / 13000.00 (expect 0 / 13,000)
+FIFO-unknown-customer control   OK                customer_not_found
+FIFO-zero-amount   control   OK                zero receipt -> amount_invalid
+FIFO-anon          control   OK                permission denied for function post_receipt_fifo
+FIFO-recon         control   OK                reconciliation after FIFO operations
+QWF-totals         control   OK                quotation total 8305000.00 (expect 8,305,000)
+QWF-skip-state     control   OK                draft -> approved: quotation_status_transition: draft -> approved
+QWF-frozen-total   control   OK                edit total after sending: quotation_not_draft: content is frozen after sending
+QWF-frozen-items-delete control   OK                delete item after sending: quotation_not_draft: items are frozen after sending
+QWF-frozen-items-insert control   OK                insert item after sending: quotation_not_draft: items are frozen after sending
+QWF-pdf-path-allowed control   OK                pdf_path can still be set after sending
+QWF-not-approved   control   OK                invoice from a sent quotation: quotation_not_approved
+QWF-approved-final control   OK                approved -> draft: quotation_status_transition: approved -> draft
+QWF-invoice        control   OK                invoice total 8305000.01 within 1 VND of quotation total (discount + VAT 10% reproduced), linked by quotation_id
+QWF-invoice-stock  control   OK                stock 20 -> 15, COGS 5,000,000
+QWF-invoice-once   control   OK                quotation_already_invoiced
+QWF-reinvoice-after-void control   OK                after voiding, the quotation can be invoiced again
+QWF-recon          control   OK                AR 131 vs open invoices - unapplied receipts=0.00; AP 331 vs open bills - unapplied disbursements=0; Inventory 156 vs sum(stock_value)=0.00; Trial balance debit vs credit=0.00
+QWF-delete-rejected control   OK                rejected quotation + items deleted
+QWF-anon           control   OK                permission denied for function invoice_from_quotation
+RPT-pnl-months     control   OK                3 months returned incl. empty one, got 3
+RPT-pnl-march      control   OK                Mar revenue 2000000.00 cogs 2000.00 gp 1998000.00
+RPT-pnl-april-void-netted control   OK                Apr revenue 500000.00 (sale 1M reversed -> net 500k) cogs 1000.00
+RPT-pnl-empty-month control   OK                May has no activity -> zeros
+RPT-top-products-excl-void control   OK                P1 qty 2 revenue 2000000.00 (voided sale of 1 excluded)
+RPT-top-products-grouped control   OK                one row per product, got 2
+RPT-top-products-limit-order control   OK                limit 1 returns the highest-revenue product
+RPT-top-customers  control   OK                c1: 2 invoices, revenue 2500000.00, outstanding 2500000.00
+RPT-top-customers-excl-void control   OK                customer whose only invoice was voided is absent
+RPT-dashboard-month-revenue control   OK                current-month revenue 0 -> 700000.00, AR 2500000.00 -> 3200000.00
+RPT-dashboard-keys control   OK                all dashboard keys present
+RPT-dashboard-non-staff control   OK                forbidden
+RPT-top-products-non-staff control   OK                forbidden
+RPT-service-role-bot control   OK                service_role (Telegram bot) can run report RPCs: OK
+RPT-dashboard-anon control   OK                permission denied for function report_dashboard
+
+SUMMARY: weaknesses CONFIRMED=0 NOT_REPRODUCIBLE=16 | controls OK=183 FAIL=0 | harness errors=0

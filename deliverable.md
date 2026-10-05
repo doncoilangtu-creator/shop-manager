@@ -1,3 +1,5 @@
+> **Tài liệu lịch sử (cụm foundation C0).** Trạng thái hiện tại của dự án xem `README.md`, `supabase/README-migrations.md` và `/workspace/refactor-artifacts/README.md`. Nội dung dưới đây (Next 14, `instrumentation.ts` tự bootstrap admin, 16 bảng) đã lạc hậu.
+
 # Foundation Deliverable — Shop Manager
 
 ## Summary

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatVND } from "@/lib/utils";
 import { vnDate, vnParts } from "@/lib/time";
 import { parseAging, parseRecon, parseTrialBalance, parseVat, rpcOrThrow } from "@/lib/reports";
-import { PeriodControls } from "./period-controls";
+import { PeriodControls, PostStockAdjustmentsButton } from "./period-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -68,9 +68,10 @@ export default async function AccountingReportPage(props: { searchParams: Promis
       <Card>
         <CardHeader>
           <CardTitle>Đối chiếu sổ phụ ↔ sổ cái</CardTitle>
-          <CardDescription>{bad.length === 0 ? "Tất cả chênh lệch bằng 0." : `${bad.length} mục chênh lệch — cần kiểm tra (tồn kho chưa hạch toán dùng "post_stock_adjustments").`}</CardDescription>
+          <CardDescription>{bad.length === 0 ? "Tất cả chênh lệch bằng 0." : `${bad.length} mục chênh lệch — nếu là tồn kho (156), có phiếu kho không chứng từ (nhập/xuất tay, kiểm kê, bot) chưa vào sổ cái.`}</CardDescription>
         </CardHeader>
         <CardContent>
+          {bad.some((r) => r.check_name.startsWith("Inventory")) && <div className="mb-3"><PostStockAdjustmentsButton /></div>}
           <table className="w-full text-sm">
             <thead><tr className="text-left text-muted-foreground"><th>Kiểm tra</th><th className="text-right">Sổ cái</th><th className="text-right">Sổ phụ</th><th className="text-right">Chênh</th></tr></thead>
             <tbody>

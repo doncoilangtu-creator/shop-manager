@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { closePeriodAction, reopenPeriodAction } from "@/lib/actions/periods";
+import { closePeriodAction, postStockAdjustmentsAction, reopenPeriodAction } from "@/lib/actions/periods";
 
 export function PeriodControls({ year, month, status, canReopen }: { year: number; month: number; status: "open" | "closed"; canReopen: boolean }) {
   const router = useRouter();
@@ -31,5 +31,17 @@ export function PeriodControls({ year, month, status, canReopen }: { year: numbe
       <Input className="h-8 w-48" placeholder="Lý do mở lại (≥5 ký tự)" value={reason} onChange={(e) => setReason(e.target.value)} />
       <Button size="sm" variant="outline" disabled={pending || reason.trim().length < 5} onClick={() => run(reopenPeriodAction, true)}>Mở lại</Button>
     </div>
+  );
+}
+
+export function PostStockAdjustmentsButton() {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return (
+    <Button size="sm" variant="outline" disabled={pending} onClick={() => start(async () => {
+      const r = await postStockAdjustmentsAction();
+      if (!r.ok) { toast.error(r.error); return; }
+      toast.success("Đã hạch toán điều chỉnh kho"); router.refresh();
+    })}>Hạch toán điều chỉnh kho</Button>
   );
 }

@@ -34,3 +34,14 @@ export async function reopenPeriodAction(formData: FormData): Promise<ActionResu
   revalidatePath("/reports/accounting");
   return { ok: true, data: undefined };
 }
+
+/** Hạch toán các phiếu kho không có chứng từ (nhập/xuất tay, kiểm kê, bot) vào sổ cái để TK 156 khớp giá trị tồn kho. */
+export async function postStockAdjustmentsAction(): Promise<ActionResult<{ posted: unknown }>> {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
+  const { vnDate } = await import("@/lib/time");
+  const { data, error } = await auth.supabase.rpc("post_stock_adjustments", { p_date: vnDate() });
+  if (error) return { ok: false, error: accountingErrorMessage(error.message) };
+  revalidatePath("/reports/accounting");
+  return { ok: true, data: { posted: data } };
+}

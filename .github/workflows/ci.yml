@@ -43,10 +43,12 @@ jobs:
       - name: Build
         run: npm run build
       - name: Audit (production deps, informational)
-        # Next 14.x has no patched release; the fix needs next >= 15.5.24.
-        # Reported but not blocking until the Next major upgrade lands.
+        # Reported but not blocking: new advisories (e.g. braces GHSA-vfj7-8cjw-p6xm) can land
+        # without an upstream fix. Review the report; do not let it gate deploys.
         run: npm audit --omit=dev
         continue-on-error: true
+      - name: .env.example in sync with code
+        run: node scripts/check-env-example.mjs . .env.example
 
   bot:
     name: Bot (Telegram, grammY)
@@ -71,3 +73,22 @@ jobs:
         run: npm run build
       - name: Audit (production deps)
         run: npm audit --omit=dev
+
+
+  db:
+    name: DB tests (local Postgres, not Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # NOTE: first written without access to GitHub Actions (verified locally on PostgreSQL 17 only). Non-blocking until it has
+    # been green on this runner image once; then remove continue-on-error.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL server binaries
+        run: sudo apt-get update && sudo apt-get install -y postgresql postgresql-contrib
+      - name: Build local DB (compat layer + all migrations)
+        run: bash scripts/local-db.sh up
+      - name: Run DB tests (fail on any CONFIRMED weakness or failed control)
+        run: bash tests/db/run.sh --strict
+      - name: End-to-end accounting scenario
+        run: bash scripts/e2e-scenario.sh
