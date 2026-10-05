@@ -17,16 +17,17 @@ import {
   type AuditSaleRow,
   type EinvoiceStatus,
 } from "@/lib/books/audit-pack";
+import { AUDIT_PACK_MAX_BYTES } from "@/lib/books/audit-pack";
 import { AUDIT_PACK_VERSION, assembleAuditZip, packPath, type PackFile } from "@/lib/books/audit-pack-zip";
 import { buildS1aFile, CONTENT_TYPE } from "@/lib/books/s1a-export";
 import { buildBkStkFile, buildTknFile } from "@/lib/books/tax-forms-export";
 import { parseTknKind, parseTknYear, tknPeriod, type TknPeriodKind } from "@/lib/books/tax-forms";
 import { vnDate } from "@/lib/time";
 
-export { AUDIT_PACK_PERIODS };
+export { AUDIT_PACK_PERIODS, AUDIT_PACK_MAX_BYTES };
 export const AUDIT_PACK_TEMPLATE = `audit_pack/${AUDIT_PACK_VERSION}`;
-/** Giới hạn kích thước zip trả về qua server action (~4 MB — giới hạn response Vercel). */
-export const AUDIT_PACK_MAX_BYTES = 4 * 1024 * 1024;
+
+
 
 type SaleJoin = {
   id: string;
@@ -48,6 +49,7 @@ type MoneyBal = {
   account_id: string | null;
   kind: string;
   label: string;
+  gl_account: string;
   balance: number;
   unassigned: boolean;
   active: boolean;
@@ -129,24 +131,28 @@ async function loadBalances(sb: SupabaseClient, from: string, to: string): Promi
   ]);
   if (openRes.error) throw new Error("money_balances(open): " + openRes.error.message);
   if (closeRes.error) throw new Error("money_balances(close): " + closeRes.error.message);
-  const openMap = new Map(((openRes.data ?? []) as MoneyBal[]).filter((b) => b.account_id && !b.unassigned).map((b) => [b.account_id!, r2(b.balance)]));
-  const accounts = ((closeRes.data ?? []) as MoneyBal[]).filter((b) => b.account_id && !b.unassigned);
+  const key = (b: MoneyBal) => b.account_id ?? `unassigned:${b.gl_account}`;
+  const openMap = new Map(((openRes.data ?? []) as MoneyBal[]).map((b) => [key(b), r2(b.balance)]));
+  const accounts = (closeRes.data ?? []) as MoneyBal[];
   const moves = await Promise.all(
     accounts.map(async (a) => {
-      const { data, error } = await sb.rpc("money_book", { p_account_id: a.account_id, p_from: from, p_to: to });
+      const { data, error } = await sb.rpc(
+        "money_book",
+        a.account_id ? { p_account_id: a.account_id, p_from: from, p_to: to } : { p_account_id: null, p_from: from, p_to: to, p_gl: a.gl_account },
+      );
       if (error) throw new Error("money_book: " + error.message);
       const rows = (data ?? []) as MoneyMove[];
       return {
         accountName: a.label,
         kind: (a.kind === "bank" || a.kind === "ewallet" ? a.kind : "cash") as AuditBalanceKind,
-        opening: openMap.get(a.account_id!) ?? 0,
+        opening: openMap.get(key(a)) ?? 0,
         inflow: r2(rows.reduce((s, r) => s + Number(r.debit || 0), 0)),
         outflow: r2(rows.reduce((s, r) => s + Number(r.credit || 0), 0)),
         closing: r2(a.balance),
       };
     }),
   );
-  // Bỏ tài khoản không hoạt động và không phát sinh trong kỳ
+  // Bỏ tài khoản (kể cả dòng “chưa gán”) không có số dư và không phát sinh trong kỳ
   return moves.filter((m) => m.opening || m.inflow || m.outflow || m.closing);
 }
 

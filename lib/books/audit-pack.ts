@@ -3,6 +3,7 @@
  * Gom dữ liệu kỳ kê khai (năm / 6 tháng) thành các sheet đối chiếu: bán hàng ↔ hóa đơn điện tử, mua hàng, số dư tiền.
  * Phần đóng gói zip + manifest + SHA256 nằm ở lib/books/audit-pack-zip.ts (server-side).
  */
+import { z } from "zod";
 import type { XlsxCell, XlsxSheet } from "@/lib/xlsx/writer";
 import { bookFileName } from "@/lib/books/s1a";
 import { TKN_KINDS, type TknPeriodKind } from "@/lib/books/tax-forms";
@@ -210,4 +211,46 @@ export function balancesSheet(input: AuditPackInput): XlsxSheet {
 /** Tên file zip: HoSoKiemTra_<MST>_<kỳ>.zip */
 export function auditPackFileName(taxCode: string, period: { from: string; to: string }): string {
   return bookFileName("HoSoKiemTra", taxCode, { from: period.from, to: period.to }, null, "zip");
+}
+
+// ---------------------------------------------------------------- yêu cầu xuất (dùng chung action + UI + test)
+
+/**
+ * Giới hạn kích thước zip trả về qua server action. Response của Vercel Functions tối đa 4,5 MB và zip được
+ * gửi dạng base64 (+33%), nên giữ zip ≤ 3,2 MB (≈ 4,27 MB base64) cho an toàn.
+ */
+export const AUDIT_PACK_MAX_BYTES = 3_200_000;
+
+export const auditPackRequestSchema = z.object({
+  year: z.coerce.number({ message: "Năm không hợp lệ" }).int("Năm không hợp lệ").min(2020, "Năm không hợp lệ (từ 2020)"),
+  kind: z.enum(["year", "h1", "h2"], { message: "Kỳ không hợp lệ (cả năm, 6 tháng đầu hoặc 6 tháng cuối)" }),
+});
+export type AuditPackRequest = z.infer<typeof auditPackRequestSchema>;
+
+/** Kiểm tra yêu cầu xuất; không cho chọn năm trong tương lai (theo ngày VN `today`). */
+export function parseAuditPackRequest(payload: unknown, today: string): { success: true; data: AuditPackRequest } | { success: false; error: string } {
+  const r = auditPackRequestSchema.safeParse(payload);
+  if (!r.success) return { success: false, error: r.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
+  if (r.data.year > Number(today.slice(0, 4))) return { success: false, error: "Không xuất hồ sơ cho năm chưa tới" };
+  return { success: true, data: r.data };
+}
+
+export const auditPackSalesTotal = (input: AuditPackInput) => auditSalesSummary(input.sales).total;
+
+export const fmtMB = (n: number) => `${(n / 1024 / 1024).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} MB`;
+
+/** null nếu kích thước cho phép, ngược lại là thông báo tiếng Việt. */
+export function auditPackSizeError(bytes: number, max = AUDIT_PACK_MAX_BYTES): string | null {
+  if (bytes <= max) return null;
+  return `Gói hồ sơ quá lớn (${fmtMB(bytes)}, tối đa ${fmtMB(max)}) để tải trực tiếp. Hãy chọn kỳ 6 tháng thay vì cả năm, hoặc tải riêng sổ S1a và tờ khai ở các trang tương ứng.`;
+}
+
+/** Ánh xạ lỗi kỹ thuật (RPC/DB) sang thông báo tiếng Việt cho người dùng. */
+export function auditPackErrorMessage(raw: string): string {
+  if (raw.includes("forbidden") || raw.includes("42501")) return "Không có quyền xuất hồ sơ kiểm tra";
+  if (raw.includes("period_invalid")) return "Kỳ không hợp lệ";
+  if (raw.includes("export_invalid")) return "Không ghi được nhật ký xuất (dữ liệu nhật ký không hợp lệ)";
+  if (raw.includes("record_book_export")) return "Không ghi được nhật ký xuất — chưa trả file";
+  if (raw.includes("audit pack:")) return "Lỗi dựng gói hồ sơ: " + raw.replace(/^.*audit pack:\s*/, "");
+  return "Không xuất được gói hồ sơ kiểm tra — thử lại sau";
 }
