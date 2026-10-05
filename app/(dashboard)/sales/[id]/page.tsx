@@ -6,7 +6,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
+import { listActiveMoneyAccounts } from "@/lib/money/queries";
 import { typed, unwrap, unwrapOne } from "@/lib/actions/_shared";
+import { accountLabel } from "@/lib/money/schema";
 import { CHANNEL_LABEL, METHOD_LABEL, type Channel, type PaymentMethod } from "@/lib/sales/schema";
 import { vnDate } from "@/lib/time";
 import { formatDate, formatDateTime, formatVND } from "@/lib/utils";
@@ -21,7 +23,7 @@ type Inv = {
   customers: { name: string; phone: string | null; is_walkin: boolean } | null;
 };
 type Line = { id: string; line_no: number; description: string | null; qty: number; unit_price: number; discount_pct: number; line_net: number; vat_amount: number; tax_group: string; vat_pct_snapshot: number | null; pit_pct_snapshot: number | null; products: { sku: string; name: string } | null };
-type Pay = { id: string; method: PaymentMethod; amount: number; note: string | null };
+type Pay = { id: string; method: PaymentMethod; amount: number; note: string | null; money_accounts: { label: string; provider: string | null; account_no_masked: string | null } | null };
 type Ret = { id: string; return_no: string; return_date: string; total: number; ar_applied: number; refunded: number; cogs_total: number; reason: string | null; voided_at: string | null; sales_return_lines: Array<{ sale_line_id: string; qty: number; amount: number }> };
 type Einv = { id: string; kind: string; status: string; provider: string | null; symbol: string | null; number: string; lookup_code: string | null; lookup_url: string | null; issued_on: string; cancel_reason: string | null };
 
@@ -39,15 +41,16 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   if (!inv) notFound();
   const [lines, pays, rets, einvs, open, groupsRes] = await Promise.all([
     sb.from("sales_invoice_lines").select("id, line_no, description, qty, unit_price, discount_pct, line_net, vat_amount, tax_group, vat_pct_snapshot, pit_pct_snapshot, products(sku, name)").eq("invoice_id", id).order("line_no"),
-    sb.from("sale_payments").select("id, method, amount, note").eq("sale_id", id).order("created_at"),
+    sb.from("sale_payments").select("id, method, amount, note, money_accounts(label, provider, account_no_masked)").eq("sale_id", id).order("created_at"),
     sb.from("sales_returns").select("id, return_no, return_date, total, ar_applied, refunded, cogs_total, reason, voided_at, sales_return_lines(sale_line_id, qty, amount)").eq("sale_id", id).order("created_at"),
     sb.from("einvoices").select("id, kind, status, provider, symbol, number, lookup_code, lookup_url, issued_on, cancel_reason").eq("sale_id", id).order("created_at"),
     sb.from("v_sales_invoice_open").select("outstanding").eq("invoice_id", id).maybeSingle(),
     sb.from("tax_groups").select("code, name_vi"),
   ]);
+  const accounts = await listActiveMoneyAccounts(sb);
   const groupName = new Map(unwrap<Array<{ code: string; name_vi: string }>>(groupsRes, "tax_groups").map((g) => [g.code, g.name_vi]));
   const L = unwrap<Line[]>(typed<Line[]>(lines), "lines");
-  const P = unwrap<Pay[]>(pays, "payments");
+  const P = unwrap<Pay[]>(typed<Pay[]>(pays), "payments");
   const R = unwrap<Ret[]>(typed<Ret[]>(rets), "returns");
   const E = unwrap<Einv[]>(einvs, "einvoices");
   const outstanding = Number((unwrapOne<{ outstanding: number }>(open, "open")?.outstanding) ?? 0);
@@ -112,7 +115,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
         <Card className="space-y-2 p-4 text-sm">
           <h2 className="font-medium">Thanh toán</h2>
           {inv.sale_source !== "hkd_sale" && <p className="text-muted-foreground">Đơn lập theo cách cũ: thu tiền ghi riêng bằng phiếu thu.</p>}
-          {P.filter((p) => true).map((p) => <div key={p.id} className="flex justify-between"><span>{METHOD_LABEL[p.method]}{p.note ? ` · ${p.note}` : ""}</span><span>{formatVND(p.amount)}</span></div>)}
+          {P.map((p) => <div key={p.id} className="flex justify-between"><span>{METHOD_LABEL[p.method]}{p.money_accounts ? ` · ${accountLabel(p.money_accounts)}` : ""}{p.note ? ` · ${p.note}` : ""}</span><span>{formatVND(p.amount)}</span></div>)}
           <div className="flex justify-between border-t pt-2"><span>Tổng tiền</span><span className="font-semibold">{formatVND(inv.total)}</span></div>
           <div className="flex justify-between"><span>Doanh thu sau trả hàng</span><span>{formatVND(netRevenue)}</span></div>
           {!inv.voided_at && <div className="flex justify-between"><span>{walkin ? "Còn thiếu" : "Công nợ còn lại"}</span><span className={outstanding > 0 ? "font-medium text-destructive" : ""}>{formatVND(outstanding)}</span></div>}
@@ -160,7 +163,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
             </TableBody>
           </Table>
         )}
-        {!inv.voided_at && !legacyVat && <ReturnForm saleId={inv.id} lines={returnLines} today={vnDate()} walkin={walkin} outstanding={outstanding} />}
+        {!inv.voided_at && !legacyVat && <ReturnForm saleId={inv.id} lines={returnLines} today={vnDate()} walkin={walkin} outstanding={outstanding} accounts={accounts} />}
       </Card>
     </div>
   );

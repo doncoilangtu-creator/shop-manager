@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
+import { listActiveMoneyAccounts } from "@/lib/money/queries";
 import { formatDate, formatVND } from "@/lib/utils";
 import { unwrap } from "@/lib/actions/_shared";
 import { SupplierForm } from "../supplier-form";
@@ -55,6 +56,7 @@ export default async function SupplierDetailPage(props: PageProps) {
       </div>
 
       <OpenItemsCard
+        accounts={await listActiveMoneyAccounts(supabase)}
         kind="disbursement"
         partnerId={supplier.id}
         balance={Number(apRes.data?.balance ?? 0)}

@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatDate, formatVND } from "@/lib/utils";
 import { vnDate } from "@/lib/time";
 import { PaymentDialog } from "./payment-dialog";
+import type { MoneyAccountOption } from "@/lib/money/schema";
 
 export type OpenItem = { id: string; no: string; date: string; due: string | null; total: number; outstanding: number };
 
@@ -13,6 +14,7 @@ export function OpenItemsCard(props: {
   balance: number;
   glBalance: number | null;
   items: OpenItem[];
+  accounts?: MoneyAccountOption[];
 }) {
   const isAr = props.kind === "receipt";
   const today = vnDate();
@@ -28,7 +30,7 @@ export function OpenItemsCard(props: {
             {mismatch && <span className="ml-2 text-destructive">⚠ lệch sổ cái {formatVND(props.glBalance)}</span>}
           </CardDescription>
         </div>
-        <PaymentDialog kind={props.kind} partnerId={props.partnerId} outstanding={Math.max(props.balance, 0)} />
+        <PaymentDialog kind={props.kind} partnerId={props.partnerId} outstanding={Math.max(props.balance, 0)} accounts={props.accounts} />
       </CardHeader>
       <CardContent>
         {props.items.length === 0 ? (

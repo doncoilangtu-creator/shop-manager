@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { cancelEinvoiceAction, recordEinvoiceAction, returnSaleAction, voidSaleAction, voidSaleReturnAction } from "@/lib/actions/sales";
 import type { ActionResult } from "@/lib/actions/_shared";
 import { formatVND } from "@/lib/utils";
+import { MoneyAccountSelect } from "@/components/money/account-select";
+import type { MoneyAccountOption } from "@/lib/money/schema";
 
 const selectCls = "h-9 w-full rounded-md border bg-background px-2 text-sm";
 
@@ -91,12 +93,13 @@ export function EinvoiceForm({ saleId, hasActive }: { saleId: string; hasActive:
 
 export type ReturnLineInfo = { id: string; label: string; isGoods: boolean; qty: number; returnedQty: number; remainingAmount: number };
 
-export function ReturnForm({ saleId, lines, today, walkin, outstanding }: { saleId: string; lines: ReturnLineInfo[]; today: string; walkin: boolean; outstanding: number }) {
+export function ReturnForm({ saleId, lines, today, walkin, outstanding, accounts = [] }: { saleId: string; lines: ReturnLineInfo[]; today: string; walkin: boolean; outstanding: number; accounts?: MoneyAccountOption[] }) {
   const { pending, error, run } = useAct();
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(today);
   const [reason, setReason] = useState("");
   const [method, setMethod] = useState<"cash" | "bank">("cash");
+  const [accountId, setAccountId] = useState("");
   const [qty, setQty] = useState<Record<string, string>>({});
   const [amount, setAmount] = useState<Record<string, string>>({});
   const open_ = lines.some((l) => l.remainingAmount > 0);
@@ -112,6 +115,7 @@ export function ReturnForm({ saleId, lines, today, walkin, outstanding }: { sale
         lines: picked.map((x) => ({ sale_line_id: x.l.id, qty: x.q, amount: x.a > 0 ? x.a : null })),
         // Hoàn tiền: để trống = hệ thống tự trừ công nợ của đơn trước, phần còn lại hoàn theo phương thức đã chọn
         refund_method: method,
+        refund_account_id: accountId || null,
       }), "Đã ghi phiếu trả hàng", () => { setOpen(false); setQty({}); setAmount({}); });
     }}>
       <p className="text-xs text-muted-foreground">
@@ -127,10 +131,11 @@ export function ReturnForm({ saleId, lines, today, walkin, outstanding }: { sale
           </div>
         ))}
       </div>
-      <div className="grid gap-2 md:grid-cols-3">
+      <div className="grid gap-2 md:grid-cols-4">
         <div className="space-y-1"><Label htmlFor="rt-date">Ngày</Label><Input id="rt-date" type="date" value={date} min="2000-01-01" onChange={(e) => setDate(e.target.value)} /></div>
         <div className="space-y-1"><Label htmlFor="rt-method">Hoàn tiền bằng</Label>
-          <select id="rt-method" className={selectCls} value={method} onChange={(e) => setMethod(e.target.value as "cash" | "bank")}><option value="cash">Tiền mặt</option><option value="bank">Chuyển khoản</option></select></div>
+          <select id="rt-method" className={selectCls} value={method} onChange={(e) => { setMethod(e.target.value as "cash" | "bank"); setAccountId(""); }}><option value="cash">Tiền mặt</option><option value="bank">Chuyển khoản</option></select></div>
+        {accounts.length > 0 && <div className="space-y-1"><Label htmlFor="rt-account">Hoàn từ tài khoản</Label><MoneyAccountSelect id="rt-account" accounts={accounts} method={method} value={accountId} onChange={setAccountId} /></div>}
         <div className="space-y-1"><Label htmlFor="rt-reason">Lý do</Label><Input id="rt-reason" value={reason} onChange={(e) => setReason(e.target.value)} /></div>
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}

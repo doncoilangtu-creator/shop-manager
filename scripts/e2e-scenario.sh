@@ -115,6 +115,15 @@ chk "trả hàng: hoàn 20.000.000 chuyển khoản, nhập lại kho, 521 ghi n
 chk "doanh thu tính ngưỡng đã trừ hàng trả lại (khớp 511 - 521 + VAT hóa đơn cũ)" "$(S "select public.revenue_ytd(2026)=public.account_balance('511')-public.account_balance('521')+public.account_balance('3331')")"
 chk "doanh thu theo nhóm ngành khớp tổng doanh thu năm" "$(S "select (select sum(revenue) from public.revenue_by_tax_group(2026))=public.revenue_ytd(2026)")"
 chk "đối chiếu sổ phụ = 0 sau bán/trả hàng" "$(S "select bool_and(diff=0) from public.accounting_reconciliation()")"
+step "8c. A4: tài khoản tiền — bán thu vào ngân hàng cụ thể, chuyển tiền nội bộ, số dư từng tài khoản khớp TK 111/112"
+BK=$(V "insert into money_accounts(kind,label,provider,account_no_masked,gl_account,is_default) values ('bank','MB chính','MB Bank','****6789','112',true) returning id")
+CASH=$(V "select id from money_accounts where kind='cash' and is_default")
+S "select public.post_sale_hkd(null,'2026-10-06','[{\"product_id\":\"$PR\",\"qty\":1,\"unit_price\":1000000}]'::jsonb,'[{\"method\":\"bank\",\"amount\":400000,\"money_account_id\":\"$BK\"},{\"method\":\"cash\",\"amount\":600000}]'::jsonb)" >/dev/null
+chk "bán thu 400k vào MB chính + 600k tiền mặt: sale_payments gắn đúng tài khoản" "$(V "select count(*)=2 and bool_and(money_account_id is not null) from sale_payments sp join sales_invoices i on i.id=sp.sale_id where i.invoice_date='2026-10-06'")"
+S "select public.post_money_transfer('$CASH','$BK',100000,'2026-10-06','Nộp tiền mặt')" >/dev/null
+chk "chuyển nội bộ 100k: +100k ở MB chính, -100k ở tiền mặt (sổ cái gắn đúng tài khoản)" "$(V "select (select sum(debit-credit) from journal_lines l join journal_entries e on e.id=l.entry_id where e.source_type='money_transfer' and l.money_account_id='$BK')=100000 and (select sum(debit-credit) from journal_lines l join journal_entries e on e.id=l.entry_id where e.source_type='money_transfer' and l.money_account_id='$CASH')=-100000")"
+chk "tổng các tài khoản tiền = TK 111 + 112 (đối chiếu)" "$(S "select (select sum(balance) from public.money_balances())=public.account_balance('111')+public.account_balance('112')")"
+chk "đối chiếu sổ phụ vẫn bằng 0" "$(S "select bool_and(diff=0) from public.accounting_reconciliation()")"
 step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"

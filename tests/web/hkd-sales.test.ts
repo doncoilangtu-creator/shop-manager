@@ -96,7 +96,7 @@ describe("actions", () => {
     const [name, args] = rpc.mock.calls[0];
     expect(name).toBe("post_sale_hkd");
     expect(args).toMatchObject({ p_customer_id: null, p_date: "2026-05-10", p_channel: "online", p_allow_over_limit: false });
-    expect(args.p_payments).toEqual([{ method: "cash", amount: 1000000, note: null }, { method: "bank", amount: 2000000, note: "MB" }]);
+    expect(args.p_payments).toEqual([{ method: "cash", amount: 1000000, note: null, money_account_id: null }, { method: "bank", amount: 2000000, note: "MB", money_account_id: null }]);
     expect(JSON.stringify(args.p_lines)).not.toContain("vat");
   });
   it("blocks walk-in under-payment before calling the DB", async () => {

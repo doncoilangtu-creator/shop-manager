@@ -10,12 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { paySupplier, receiveCustomerPayment } from "@/lib/actions/accounting";
 import { formatVND } from "@/lib/utils";
+import { MoneyAccountSelect } from "@/components/money/account-select";
+import type { MoneyAccountOption } from "@/lib/money/schema";
 
-export function PaymentDialog({ kind, partnerId, outstanding }: { kind: "receipt" | "disbursement"; partnerId: string; outstanding: number }) {
+export function PaymentDialog({ kind, partnerId, outstanding, accounts = [] }: { kind: "receipt" | "disbursement"; partnerId: string; outstanding: number; accounts?: MoneyAccountOption[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"cash" | "bank">("cash");
+  const [accountId, setAccountId] = useState("");
   const [memo, setMemo] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -28,6 +31,7 @@ export function PaymentDialog({ kind, partnerId, outstanding }: { kind: "receipt
     fd.set("partner_id", partnerId);
     fd.set("amount", amount);
     fd.set("method", method);
+    fd.set("money_account_id", accountId);
     fd.set("memo", memo);
     startTransition(async () => {
       const res = await (kind === "receipt" ? receiveCustomerPayment(fd) : paySupplier(fd));
@@ -55,11 +59,17 @@ export function PaymentDialog({ kind, partnerId, outstanding }: { kind: "receipt
           </div>
           <div className="space-y-2">
             <Label htmlFor="pay-method">Hình thức</Label>
-            <select id="pay-method" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={method} onChange={(e) => setMethod(e.target.value as "cash" | "bank")}>
+            <select id="pay-method" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={method} onChange={(e) => { setMethod(e.target.value as "cash" | "bank"); setAccountId(""); }}>
               <option value="cash">Tiền mặt</option>
               <option value="bank">Chuyển khoản</option>
             </select>
           </div>
+          {accounts.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="pay-account">Tài khoản {kind === "receipt" ? "nhận tiền" : "chi tiền"}</Label>
+              <MoneyAccountSelect id="pay-account" accounts={accounts} method={method} value={accountId} onChange={setAccountId} />
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="pay-memo">Ghi chú</Label>
             <Input id="pay-memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
