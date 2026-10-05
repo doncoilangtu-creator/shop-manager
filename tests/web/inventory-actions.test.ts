@@ -69,15 +69,10 @@ describe("updateProduct never writes stock", () => {
   });
 });
 
-describe("stockIn", () => {
-  it("is a ledger RPC with integer positive qty", async () => {
-    rpc.mockResolvedValue({ data: {}, error: null });
-    const { stockIn } = await import("@/lib/actions/inventory");
-    expect((await stockIn(form({ product_id: UUID, qty: "0" }))).ok).toBe(false);
-    expect((await stockIn(form({ product_id: UUID, qty: "1.5" }))).ok).toBe(false);
-    expect((await stockIn(form({ product_id: UUID, qty: "4", unit_cost: "100" }))).ok).toBe(true);
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc.mock.calls[0][0]).toBe("stock_adjust");
+describe("stockIn removed (0014)", () => {
+  it("no longer exports a manual stock-in action: hàng mua phải đi qua phiếu mua", async () => {
+    const mod = (await import("@/lib/actions/inventory")) as Record<string, unknown>;
+    expect(mod.stockIn).toBeUndefined();
   });
 });
 

@@ -61,3 +61,11 @@ create or replace function pg_temp.mk_product(p_cost numeric default 0, p_qty in
   insert into public.products(sku, name, cost_price, stock_qty) values ('P-' || substr(gen_random_uuid()::text,1,8), 'Prod', p_cost, p_qty) returning id $f$;
 create or replace function pg_temp.bal(code text) returns numeric language sql as $f$ select public.account_balance(code) $f$;
 create or replace function pg_temp.ok(b boolean) returns text language sql as $f$ select case when b then 'OK' else 'FAIL' end $f$;
+
+-- Accounting mode (0014+): 'hkd' is the default; cases that exercise the legacy VAT paths (3331/133) switch to 'enterprise' inside their transaction.
+create or replace function pg_temp.set_mode(m text) returns void language plpgsql security definer as $f$
+begin
+  if to_regclass('public.app_settings') is not null then
+    insert into public.app_settings(key, value) values ('accounting_mode', m) on conflict (key) do update set value = excluded.value;
+  end if;
+end $f$;

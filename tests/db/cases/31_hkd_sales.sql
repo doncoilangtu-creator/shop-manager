@@ -234,7 +234,9 @@ begin
   perform pg_temp.rec('HKD-return-immutable', 'control', pg_temp.ok(e like '%immutable%'), left(e, 70));
   -- hóa đơn VAT cũ không hỗ trợ trả hàng tự động
   perform pg_temp.act_as('authenticated', u);
+  perform pg_temp.set_mode('enterprise');   -- hóa đơn VAT cũ chỉ tạo được ở chế độ legacy
   legacy := public.post_sales_invoice(c, '2026-05-20', '2026-06-20', jsonb_build_array(jsonb_build_object('product_id', p, 'qty', 1, 'unit_price', 1000000, 'vat_rate', 10)));
+  perform pg_temp.set_mode('hkd');
   e := pg_temp.try(format($q$select public.post_sale_return(%L, '2026-05-21', jsonb_build_array(jsonb_build_object('sale_line_id', (select id from public.sales_invoice_lines where invoice_id = %L limit 1), 'qty', 1)))$q$, (legacy->>'invoice_id')::uuid, (legacy->>'invoice_id')::uuid));
   reset role;
   perform pg_temp.rec('HKD-return-legacy-vat', 'control', pg_temp.ok(e = 'return_unsupported_vat_invoice'), 'hóa đơn cũ có VAT: ' || e);

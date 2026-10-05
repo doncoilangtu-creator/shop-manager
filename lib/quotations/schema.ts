@@ -9,7 +9,7 @@ import { z } from "zod";
  * Quotation-level:
  *   subtotal = sum(line_total for each line)
  *   discount = quotation-level discount amount (VND) — applied after subtotal
- *   vat      = (subtotal - discount) * vatRate / 100
+ *   vat      = (subtotal - discount) * vatRate / 100   (vatRate luôn 0 ở chế độ hộ kinh doanh: giá đã gồm thuế)
  *   total    = subtotal - discount + vat
  */
 
@@ -33,7 +33,8 @@ export const quotationFormSchema = z.object({
     ),
   notes: z.string().max(2000).optional().nullable(),
   discount: z.coerce.number().min(0, "CK không âm"), // VND amount
-  vat_rate: z.coerce.number().min(0).max(100, "VAT tối đa 100%"),
+  // Chế độ hộ kinh doanh (0014): báo giá dùng GIÁ ĐÃ GỒM THUẾ, không tách VAT. Giữ trường để tương thích, nhưng chỉ chấp nhận 0.
+  vat_rate: z.coerce.number().min(0).max(0, "Báo giá hộ kinh doanh không tách VAT (giá đã gồm thuế)").default(0),
   items: z
     .array(quotationItemSchema)
     .min(1, "Phải có ít nhất 1 dòng sản phẩm")

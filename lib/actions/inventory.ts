@@ -125,7 +125,8 @@ export async function updateProduct(
 
   if (error) return { ok: false, error: error.message };
 
-  // stock is NOT editable here: use countStock() (stocktake) / stockIn() so every change is a ledger movement.
+  // stock is NOT editable here: use countStock() (kiểm kê) or a purchase bill (/purchases/new → post_purchase_bill) so every change is a ledger movement.
+  // Manual stock-in (stock_adjust "in" without a document) is blocked in HKD mode since 0014.
   revalidatePath("/inventory");
   revalidatePath(`/inventory/${id}`);
   return { ok: true, data: { id } };
@@ -160,34 +161,6 @@ export async function deleteProduct(id: string): Promise<ActionResult<null>> {
     }
     return { ok: false, error: pgErrorMessage(error) };
   }
-  revalidatePath("/inventory");
-  return { ok: true, data: null };
-}
-
-const stockInSchema = z.object({
-  product_id: z.string().uuid(),
-  qty: z.coerce.number().int().positive("Số lượng phải > 0"),
-  unit_cost: z.coerce.number().min(0).default(0),
-  notes: z.string().max(500).optional().nullable(),
-});
-
-export async function stockIn(formData: FormData): Promise<ActionResult<null>> {
-  const auth = await requireUser();
-  if (!auth.ok) return auth;
-  const parsed = stockInSchema.safeParse(cleanInput(formData));
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ" };
-  }
-  const { error } = await auth.supabase.rpc("stock_adjust", {
-    p_product_id: parsed.data.product_id,
-    p_type: "in",
-    p_qty: parsed.data.qty,
-    p_unit_cost: parsed.data.unit_cost,
-    p_ref_type: "manual",
-    p_notes: parsed.data.notes ?? `Nhập kho nhanh ${parsed.data.qty}`,
-  });
-  if (error) return { ok: false, error: stockErrorMessage(error.message) };
-
   revalidatePath("/inventory");
   return { ok: true, data: null };
 }

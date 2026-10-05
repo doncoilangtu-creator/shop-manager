@@ -1,6 +1,7 @@
 -- C2/C4: stock ledger invariants and stock_adjust() RPC
 \ir ../_lib.sql
 begin;
+select pg_temp.set_mode('enterprise'); -- legacy (pre-0014) behaviour under test; the HKD default is covered by case 32
 do $$
 declare p uuid; p2 uuid; u uuid := pg_temp.mk_staff(); stranger uuid := gen_random_uuid(); r jsonb; e text; n int; q int; mm int;
 begin

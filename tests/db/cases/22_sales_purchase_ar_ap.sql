@@ -1,6 +1,7 @@
 -- Sales / purchases / receipts / allocations / VAT / reconciliation (rolled back)
 \ir ../_lib.sql
 begin;
+select pg_temp.set_mode('enterprise'); -- legacy (pre-0014) behaviour under test; the HKD default is covered by case 32
 create or replace function pg_temp.recon_ok() returns boolean language sql as $f$
   select coalesce(bool_and(diff = 0), false) from public.accounting_reconciliation() $f$;
 do $$

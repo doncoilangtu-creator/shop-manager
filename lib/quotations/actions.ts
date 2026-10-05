@@ -25,6 +25,7 @@ function quotationErrorMessage(msg: string): string {
   if (msg.includes("quotation_not_approved")) return "Chỉ lập hóa đơn từ báo giá đã duyệt";
   if (msg.includes("quotation_already_invoiced")) return "Báo giá này đã được lập hóa đơn";
   if (msg.includes("customer_required_for_invoice")) return "Báo giá chưa chọn khách hàng";
+  if (msg.includes("vat_not_allowed_hkd")) return "Hộ kinh doanh không tách VAT: dùng đơn giá đã gồm thuế (báo giá cũ có VAT cần lập lại)";
   if (msg.includes("vat_rate_unknown")) return "Thuế suất VAT phải là 0, 5, 8 hoặc 10%";
   if (msg.includes("qty_not_integer")) return "Số lượng phải là số nguyên để xuất kho";
   return accountingErrorMessage(msg);
@@ -298,7 +299,7 @@ export async function createQuotationFormAction(formData: FormData) {
     valid_until: String(formData.get("valid_until") || ""),
     notes: String(formData.get("notes") || ""),
     discount: Number(formData.get("discount") || 0),
-    vat_rate: Number(formData.get("vat_rate") || 10),
+    vat_rate: 0,
     items: readItems(formData),
   };
   const result = await createQuotationAction(payload, status);

@@ -1,6 +1,7 @@
 -- Document-less stock movements are booked to the GL by post_stock_adjustments() (rolled back)
 \ir ../_lib.sql
 begin;
+select pg_temp.set_mode('enterprise'); -- legacy (pre-0014) behaviour under test; the HKD default is covered by case 32
 do $$
 declare u uuid := pg_temp.mk_staff(); p uuid := pg_temp.mk_product(0, 0); r jsonb; d numeric; e text; n int;
 begin

@@ -1,6 +1,7 @@
 -- C2/C6: save_quotation() atomicity + totals computed in SQL
 \ir ../_lib.sql
 begin;
+select pg_temp.set_mode('enterprise'); -- legacy (pre-0014) behaviour under test; the HKD default is covered by case 32
 do $$
 declare u uuid := pg_temp.mk_staff(); p uuid; c uuid; r jsonb; qid uuid; e text; n int; n_items int; tot numeric; code text := 'BG-' || substr(gen_random_uuid()::text, 1, 8);
 begin

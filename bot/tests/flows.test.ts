@@ -35,29 +35,56 @@ const texts = (sent: Awaited<ReturnType<typeof run>>) => sent.filter((s) => s.me
 
 
 describe("owner flows", () => {
-  it("/nhap books stock via the stock_adjust RPC and NEVER writes products/stock_movements directly", async () => {
-    fake = makeFakeSupabase({
-      tables: { products: { data: [{ id: "p1", name: "SSD <1TB>", stock_qty: 3 }], error: null } },
-      rpcs: { stock_adjust: { data: { movement_id: "m1", stock_qty: 8 }, error: null } },
-    });
-    const out = texts(await run("/nhap HP-1 5 4500000", 1, OWNER));
+  const NHAP_TABLES = () => ({
+    suppliers: { data: [{ id: "s1", name: "Cty <Linh Kiện>", phone: "0911" }], error: null },
+    products: { data: [{ id: "p1", name: "SSD <1TB>", stock_qty: 3 }], error: null },
+  });
+  const BILL_OK = { data: { bill_id: "b1", bill_no: "PB-2026-000001", subtotal: 22500000, vat: 0, total: 22500000 }, error: null };
+
+  it("/nhap = ONE atomic post_purchase_bill (nhà cung cấp + chứng từ), never stock_adjust and never writes tables directly", async () => {
+    fake = makeFakeSupabase({ tables: NHAP_TABLES(), rpcs: { post_purchase_bill: BILL_OK } });
+    const out = texts(await run('/nhap "Cty Linh" HP-1 5 4500000 HD0012', 1, OWNER));
     expect(fake.rpcCalls).toHaveLength(1);
-    expect(fake.rpcCalls[0].fn).toBe("stock_adjust");
-    expect(fake.rpcCalls[0].args).toMatchObject({ p_product_id: "p1", p_type: "in", p_qty: 5, p_unit_cost: 4500000 });
+    expect(fake.rpcCalls[0].fn).toBe("post_purchase_bill");
+    expect(fake.rpcCalls[0].args).toMatchObject({
+      p_supplier_id: "s1", p_due_date: null, p_supplier_ref: "HD0012",
+      p_lines: [{ product_id: "p1", qty: 5, unit_cost: 4500000, vat_rate: 0 }],
+    });
+    expect(fake.rpcCalls.some((c) => c.fn === "stock_adjust")).toBe(false);
     expect(fake.writes()).toEqual([]);
+    expect(out[0]).toContain("PB-2026-000001");
     expect(out[0]).toContain("SSD &lt;1TB&gt;");
-    expect(out[0]).toContain("Tồn mới: <b>8</b>");
+    expect(out[0]).toContain("Cty &lt;Linh Kiện&gt;");
+    expect(out[0]).toContain("/purchases/b1");
   });
 
-  it("/nhap maps DB errors to a safe message (raw error is not echoed)", async () => {
+  it("/nhap without a supplier match, or with several, stops before any RPC", async () => {
+    fake = makeFakeSupabase({ tables: { suppliers: { data: [], error: null }, products: NHAP_TABLES().products }, rpcs: { post_purchase_bill: BILL_OK } });
+    expect(texts(await run("/nhap Khong HP-1 5 4500000", 1, OWNER))[0]).toContain("Không tìm thấy nhà cung cấp");
+    expect(fake.rpcCalls).toHaveLength(0);
     fake = makeFakeSupabase({
-      tables: { products: { data: [{ id: "p1", name: "X", stock_qty: 0 }], error: null } },
-      rpcs: { stock_adjust: { data: null, error: { message: 'new row violates check constraint "secret_internal_name"' } } },
+      tables: { suppliers: { data: [{ id: "s1", name: "Cty A1", phone: "1" }, { id: "s2", name: "Cty A2", phone: "2" }], error: null }, products: NHAP_TABLES().products },
+      rpcs: { post_purchase_bill: BILL_OK },
     });
+    expect(texts(await run("/nhap Cty HP-1 5 4500000", 1, OWNER))[0]).toContain("nhiều nhà cung cấp");
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("/nhap rejects the old syntax (SKU SL [giá]) with the usage text", async () => {
+    fake = makeFakeSupabase({ tables: NHAP_TABLES(), rpcs: { post_purchase_bill: BILL_OK } });
+    const out = texts(await run("/nhap HP-1 5 4500000", 1, OWNER));
+    expect(out[0]).toContain("Cú pháp: /nhap");
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("/nhap maps DB errors to a safe message (raw error is not echoed) and duplicate chứng từ to a clear one", async () => {
+    fake = makeFakeSupabase({ tables: NHAP_TABLES(), rpcs: { post_purchase_bill: { data: null, error: { message: 'new row violates check constraint "secret_internal_name"' } } } });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const out = texts(await run("/nhap HP-1 5", 1, OWNER));
+    const out = texts(await run("/nhap Cty HP-1 5 100 X1", 1, OWNER));
     expect(out[0]).toContain("Có lỗi hệ thống");
     expect(out[0]).not.toContain("secret_internal_name");
+    fake = makeFakeSupabase({ tables: NHAP_TABLES(), rpcs: { post_purchase_bill: { data: null, error: { message: 'duplicate key value violates unique constraint "uq_pb_supplier_ref"' } } } });
+    expect(texts(await run("/nhap Cty HP-1 5 100 X1", 1, OWNER))[0]).toContain("đã được nhập trước đó");
   });
 
   const BAN_TABLES = () => ({
@@ -173,7 +200,7 @@ describe("owner flows", () => {
 
   it("customers cannot run owner commands", async () => {
     fake = makeFakeSupabase({});
-    const out = texts(await run("/nhap HP-1 5", 2, CUST));
+    const out = texts(await run("/nhap Cty HP-1 5 100", 2, CUST));
     expect(out[0]).toContain("⛔");
     expect(fake.rpcCalls).toHaveLength(0);
   });
