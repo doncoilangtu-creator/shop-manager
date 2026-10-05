@@ -1,6 +1,6 @@
 # Hộ kinh doanh (HKD) — cách app xử lý, căn cứ và quyết định cần chủ xác nhận
 
-Tài liệu sống, cập nhật theo từng cụm refactor A1–A4 (kế hoạch gốc: `misa-hkd-gap-plan.md`, kịch bản A = hộ kinh doanh
+Tài liệu sống, cập nhật theo từng cụm refactor A1–A6 (kế hoạch gốc: `misa-hkd-gap-plan.md`, kịch bản A = hộ kinh doanh
 doanh thu **dưới 1 tỷ đồng/năm**, sổ **S1a-HKD** theo TT152/2025, giá bán **đã gồm VAT**, hóa đơn bán hàng **không tách VAT**).
 
 > Đây không phải tư vấn pháp lý/thuế. Ngưỡng, tỷ lệ, mẫu biểu đã đổi nhiều lần trong 2025–2026, nên mọi con số pháp lý nằm trong bảng
@@ -99,7 +99,7 @@ Forward-only, không UPDATE dữ liệu cũ. Production hiện gần như trốn
 ## A4 — Tiền theo từng tài khoản (migration `0015_money_accounts.sql`)
 
 ### Mô hình
-- Bảng `money_accounts`: loại `cash` (TK 111) / `bank` / `ewallet` (TK 112), tên hiển thị (không trùng), ngân hàng/nhà cung cấp ví, **chỉ 4 số cuối** của số tài khoản (`****1234` — không lưu số đầy đủ), chủ tài khoản, cờ **đã thông báo cơ quan thuế** (+ ngày; tiền mặt không có cờ này), cờ **mặc định** (tối đa 1 mặc định cho mỗi TK 111/112), cờ đang sử dụng. Có sẵn tài khoản “Tiền mặt” mặc định.
+- Bảng `money_accounts`: loại `cash` (TK 111) / `bank` / `ewallet` (TK 112), tên hiển thị (không trùng), ngân hàng/nhà cung cấp ví, bản che **4 số cuối** (`****1234`) để nhân viên xem, chủ tài khoản, cờ **đã thông báo cơ quan thuế** (+ ngày; tiền mặt không có cờ này), cờ **mặc định** (tối đa 1 mặc định cho mỗi TK 111/112), cờ đang sử dụng, địa điểm KD (A6). Có sẵn tài khoản “Tiền mặt” mặc định. Từ A6: số tài khoản **đầy đủ** lưu ở `money_account_numbers` (RLS chỉ chủ hộ đọc) để điền mẫu 01/BK-STK.
 - `journal_lines`, `payments`, `sale_payments` có cột `money_account_id` (nullable). Trigger `trg_jl_rules` bắt buộc `money_account_id` chỉ đi với TK 111/112 và đúng TK liên kết của tài khoản (`money_account_mismatch`). **Không backfill** (sổ cái bất biến).
 - Thu/chi công nợ (`post_receipt[_fifo]`, `post_disbursement[_fifo]`), bán hàng (`post_sale_hkd`, mỗi khoản thanh toán có `money_account_id`) và hoàn tiền trả hàng (`post_sale_return`, `p_refund_account_id` hoặc từng khoản trong `p_refunds`) ghi tiền vào **đúng tài khoản**. Không chọn tài khoản = tài khoản mặc định của phương thức (nếu chưa có thì dòng “chưa gán”).
 - `money_balances(as_of)`: số dư từng tài khoản từ sổ cái; dòng cũ chưa gán được tính vào tài khoản mặc định cùng TK, nếu chưa có mặc định thì hiện thành dòng “Chưa gán tài khoản (TK 111/112)”. `money_book(...)`: sổ tiền từng tài khoản có số dư lũy kế. `accounting_reconciliation()` thêm dòng đối chiếu *tổng các tài khoản tiền = TK 111 + TK 112*.
@@ -112,10 +112,61 @@ Forward-only, không UPDATE dữ liệu cũ. Production hiện gần như trốn
 - Bot `/ban … ck` không đổi: chuyển khoản vào tài khoản ngân hàng mặc định (nếu chưa có thì “chưa gán”).
 
 ### Quyết định cần chủ xác nhận (A4)
-1. **Chỉ lưu 4 số cuối** số tài khoản. Mẫu 01/BK-STK (A6/H9) cần số đầy đủ — sẽ bổ sung có kiểm soát truy cập khi làm tính năng đó.
+1. **Số tài khoản đầy đủ chỉ chủ hộ đọc** (`money_account_numbers`); nhân viên chỉ thấy bản che ****1234. Audit không ghi số đầy đủ.
 2. **Tài khoản mặc định**: tiền cũ chưa gắn tài khoản được tính vào tài khoản mặc định; nếu chưa có tài khoản ngân hàng mặc định, phần TK 112 cũ hiện ở dòng “chưa gán” cho tới khi tạo và đặt mặc định.
 3. **Phương thức vẫn chỉ `cash`/`bank`**; ví điện tử là phương thức `bank` với tài khoản loại `ewallet` (TK 112).
 4. **Số dư đầu kỳ** do chủ hộ nhập (Nợ 111/112 — Có 411); không chặn nhập nhiều lần (mỗi lần là một bút toán, có audit).
 5. **Chuyển tiền nội bộ cho nhân viên**; không bắt buộc đủ số dư (cảnh báo số dư âm ở trang Tiền & Quỹ).
 6. **Cờ “đã thông báo thuế” chỉ mang tính nhắc việc** — không khẳng định pháp lý; chủ/kế toán tự xác nhận với cơ quan thuế.
-7. **Chưa làm** (mục P1 của kế hoạch): kiểm kê quỹ tiền mặt, chủ hộ rút vốn, xuất mẫu 01/BK-STK.
+7. **Chưa làm** (mục P1 của kế hoạch): kiểm kê quỹ tiền mặt, chủ hộ rút vốn. Xuất 01/BK-STK → A6.
+
+## A5 — Sổ S1a-HKD (migration `0016_book_s1a.sql`)
+
+### Căn cứ & bố cục
+Thông tư 152/2025/TT-BTC Điều 4 (HKD không chịu GTGT, không nộp TNCN): **Sổ doanh thu bán hàng hóa, dịch vụ — Mẫu số S1a-HKD**. File xuất (Excel và PDF) giữ đúng mẫu đăng Công báo số 51 ngày 23/01/2026: góc trái “HỘ, CÁ NHÂN KINH DOANH / Địa chỉ / Mã số thuế”; góc phải “Mẫu số S1a-HKD (Kèm theo Thông tư số 152/2025/TT-BTC ngày 31 tháng 12 năm 2025 của Bộ trưởng Bộ Tài chính)”; tên sổ; Địa điểm kinh doanh; Kỳ kê khai; Đơn vị tính; bảng 3 cột **A Ngày tháng · B Diễn giải · 1 Số tiền**; dòng **Tổng cộng**; “Ngày … tháng … năm …” (ngày lập) và khối ký **NGƯỜI ĐẠI DIỆN HỘ KINH DOANH/CÁ NHÂN KINH DOANH (Ký, ghi rõ họ tên, đóng dấu (nếu có))** kèm tên người ký (hồ sơ: người ghi sổ, nếu trống thì chủ hộ). File Excel có thêm sheet “Theo nhóm ngành” (bảng bổ sung theo Đ3.3, không thay sổ). PDF dùng font Liberation Serif (SIL OFL, `assets/fonts`) để hiện đủ dấu tiếng Việt.
+
+### Cách sinh số liệu (một nguồn dữ liệu — ADR D1)
+- `book_s1a(từ, đến, địa điểm, chế độ)` đọc trực tiếp đơn bán, phiếu trả hàng đã ghi: + đơn bán theo từng nhóm ngành (tổng tiền đã gồm thuế), − hàng bán bị trả lại/giảm giá. Diễn giải có ký hiệu-số HĐĐT (nếu đã nhập), số đơn nội bộ, “khách lẻ”/tên khách.
+- **Hủy chứng từ**: nếu bút toán hủy cùng tháng với chứng từ gốc thì bỏ cả hai; nếu hủy ở tháng sau thì ghi dòng điều chỉnh ngược dấu vào ngày hủy — sổ của tháng đã khóa/đã in không thay đổi.
+- Chế độ **Từng nghiệp vụ** hoặc **Tổng hợp theo ngày** (TT152 Đ4.2.b cho phép ghi theo nghiệp vụ hoặc định kỳ).
+- Địa điểm: sổ lập riêng từng địa điểm; đơn chưa gắn địa điểm được tính cho trụ sở. “Tất cả địa điểm” chỉ là bản tổng hợp để xem.
+- `book_s1a_check`: tổng S1a = doanh thu thuần sổ cái (511 − 521, cộng 3331 của đơn legacy có VAT) cùng kỳ; e2e và test DB kiểm tra khớp theo tháng/năm.
+- Khóa sổ: dùng khóa kỳ kế toán theo tháng có sẵn (`close_period`), hiện ngay trên trang Sổ sách (chủ hộ).
+- `book_exports`: mỗi lần xuất ghi loại, kỳ, địa điểm, định dạng, tên file, **SHA-256**, số dòng, tổng tiền, phiên bản mẫu, người xuất; chỉ thêm, không sửa/xóa.
+
+### Giao diện
+**Sổ sách** (`/books`): chọn kỳ (tháng/quý/6 tháng/năm/tự chọn), địa điểm, cách ghi; xem trước đúng cột của mẫu; nút **Excel (.xlsx)** / **PDF** (`/api/books/s1a`); thẻ đối chiếu sổ cái; tổng hợp theo nhóm ngành; trạng thái khóa từng tháng; lịch sử xuất kèm SHA-256.
+
+### Quyết định cần chủ xác nhận (A5)
+1. **Số tiền trên S1a = tổng tiền thanh toán (đã gồm thuế)** trừ trả hàng/giảm giá (ND68 Đ5, giá đã gồm VAT). Đơn legacy có VAT tách: cộng cả VAT.
+2. **Hủy chứng từ khác tháng = dòng điều chỉnh âm ở tháng hủy** (không sửa sổ tháng cũ); hủy cùng tháng thì không lên sổ.
+3. **Sổ lập theo từng địa điểm**; đơn cũ chưa gắn địa điểm tính cho trụ sở.
+4. **Ngày ghi sổ = ngày chứng từ** (ngày đơn bán / phiếu trả), không phải ngày nhập liệu.
+5. Bảng **theo nhóm ngành để ở sheet riêng**, sheet chính chỉ 3 cột đúng mẫu.
+6. Ký số / lưu bản scan đã ký **chưa làm**; app chỉ lưu SHA-256 file đã xuất.
+
+
+## A6 — Tờ khai 01/TKN-CNKD & bảng kê 01/BK-STK (migration `0017_tax_forms.sql`)
+
+### Căn cứ
+- **01/TKN-CNKD** (TT 50/2026/TT-BTC): thông báo doanh thu năm đối với HKD/CNKD có doanh thu năm ≤ 1 tỷ đồng — chỉ kê doanh thu theo chỉ tiêu [08]/[09]/[10]/[11], **không khai số thuế**. Hạn: năm → trước 31/01 năm sau; HKD mới (6 tháng đầu) → trước 31/07, 6 tháng cuối → trước 31/01 năm sau. Mốc chính của kịch bản A: **31/01/2027** (năm 2026).
+- **01/BK-STK** (TT 18/2026/TT-BTC): bảng kê tài khoản ngân hàng/ví dùng cho kinh doanh; khai lần đầu, thay đổi thông tin, hoặc đóng. Hạn gia hạn cho HKD ≤ 1 tỷ chưa nộp (TT50 Đ4.2: 31/07/2026) đã qua — chủ hộ tự kiểm tra đã nộp chưa.
+
+### Dữ liệu & RPC
+- `tkn_cnkd_data(năm, nửa năm)`: cùng nguồn với sổ S1a (`book_s1a`) nên tổng tờ khai = tổng sổ. Xếp chỉ tiêu: nhóm ngành hàng hóa → a, dịch vụ → b, sản xuất/vận tải/dịch vụ gắn hàng hóa → d, khác → g; kênh online/sàn → [09], còn lại → [08]. HKD ≤ 1 tỷ không tính thuế → không có engine thuế.
+- `money_account_numbers` (số TK đầy đủ, RLS chỉ owner), cột `location_id` / `info_changed_at` / `bk_closed_reported` trên `money_accounts`. `bk_stk_data(scope)` trả trạng thái [09]: `first` / `changed` / `closed` / `unchanged` / `closed_reported` + danh sách trường thiếu. `mark_bk_stk_filed(ids, ngày)`: sau khi nộp cổng thuế, đánh dấu đã thông báo (hoặc đã khai đóng).
+- Nhật ký xuất dùng lại `book_exports` (`kind` = `tkn_cnkd` | `bk_stk`), SHA-256 từng file.
+
+### Giao diện
+**Sổ sách → Tờ khai & bảng kê** (`/books/tax-forms`):
+- Thanh tiến độ doanh thu năm so với ngưỡng 1 tỷ (cùng `threshold_status` / banner 80 % · 100 % của A1) + lưu ý khi gần/vượt ngưỡng: mẫu ≤ 1 tỷ **không dùng để nộp** nếu đã vượt.
+- Xem/xuất Excel·PDF 01/TKN-CNKD theo năm hoặc nửa năm; nhắc hạn nộp.
+- Bảng kê tài khoản (chỉ chủ hộ): danh sách cần kê khai / tất cả, xuất Excel·PDF, đánh dấu đã nộp. Form Tiền & Quỹ nhận địa điểm KD và lưu số TK đầy đủ.
+
+### Quyết định cần chủ xác nhận (A6)
+1. **Chỉ xuất số liệu để chủ hộ nhập tay lên cổng thuế / eTax Mobile** — app không nộp thay, không ký số tờ khai.
+2. **Mẫu 01/TKN-CNKD chỉ dùng khi doanh thu năm ≤ 1 tỷ**. Khi `threshold_status.level = exceeded`, trang cảnh báo đỏ và vẫn cho xuất để đối chiếu nội bộ, nhưng chủ hộ phải khai theo quy định HKD trên ngưỡng (không nằm trong phạm vi A).
+3. **Xếp chỉ tiêu [08]/[09]** theo nhóm ngành sản phẩm + kênh bán; [08c]/[08e]/[09c]/[09e]/[10] luôn 0 vì chưa seed nhóm “cho thuê” / “nội dung số” / “đại lý xổ số…” (cùng quyết định A1 #4). Chủ hộ có thể sửa tay trên cổng nếu phân loại khác.
+4. **Số tài khoản đầy đủ chỉ chủ hộ** (RLS); nhân viên chỉ thấy ****1234. Audit không ghi số đầy đủ.
+5. **Cờ “đã nộp bảng kê” là nhắc việc nội bộ** — không khẳng định pháp lý; chủ tự xác nhận với cơ quan thuế.
+6. **Chưa làm**: mẫu 01/TB-ĐĐKD (thông báo địa điểm), nhắc hạn qua Telegram, XML nộp qua nhà cung cấp, engine tính thuế khi vượt ngưỡng.

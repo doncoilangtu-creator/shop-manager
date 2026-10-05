@@ -10,6 +10,10 @@ P() { psql -X -q -d $DB -v ON_ERROR_STOP=1 "$@"; }
 V() { P -Atc "$1"; }
 SVC="set role service_role; select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false);"
 S() { psql -X -Atq -d $DB -v ON_ERROR_STOP=1 -c "$SVC $1" | tail -n +2 | grep -v '^SET$'; }
+# chủ hộ (owner) như PostgREST: role authenticated + sub = user trong app_users
+OWNER_ID=$(V "with u as (insert into auth.users(id,email) values (gen_random_uuid(),'owner_e2e@test.local') returning id) insert into app_users(user_id,role) select id,'owner' from u returning user_id")
+OWN="set role authenticated; select set_config('request.jwt.claims','{\"role\":\"authenticated\",\"sub\":\"$OWNER_ID\"}',false);"
+O() { psql -X -Atq -d $DB -v ON_ERROR_STOP=1 -c "$OWN $1" | tail -n +2 | grep -v '^SET$'; }
 step() { echo; echo "=== $1"; }
 fail=0; chk() { if [ "$2" = "t" ]; then echo "  [OK]   $1"; else echo "  [FAIL] $1"; fail=1; fi; }
 
@@ -124,6 +128,14 @@ S "select public.post_money_transfer('$CASH','$BK',100000,'2026-10-06','Nộp ti
 chk "chuyển nội bộ 100k: +100k ở MB chính, -100k ở tiền mặt (sổ cái gắn đúng tài khoản)" "$(V "select (select sum(debit-credit) from journal_lines l join journal_entries e on e.id=l.entry_id where e.source_type='money_transfer' and l.money_account_id='$BK')=100000 and (select sum(debit-credit) from journal_lines l join journal_entries e on e.id=l.entry_id where e.source_type='money_transfer' and l.money_account_id='$CASH')=-100000")"
 chk "tổng các tài khoản tiền = TK 111 + 112 (đối chiếu)" "$(S "select (select sum(balance) from public.money_balances())=public.account_balance('111')+public.account_balance('112')")"
 chk "đối chiếu sổ phụ vẫn bằng 0" "$(S "select bool_and(diff=0) from public.accounting_reconciliation()")"
+step "8d. A5: sổ S1a-HKD sinh từ chứng từ khớp sổ cái"
+chk "S1a năm 2026 = doanh thu thuần sổ cái (511 − 521 + 3331 legacy)" "$(S "select diff = 0 and s1a_total <> 0 from public.book_s1a_check('2026-01-01','2026-12-31')")"
+chk "S1a tháng 10/2026 khớp sổ cái" "$(S "select diff = 0 from public.book_s1a_check('2026-10-01','2026-10-31')")"
+
+step "8e. A6: 01/TKN-CNKD tổng = S1a; 01/BK-STK (số TK đầy đủ chỉ owner)"
+chk "tổng [11] 01/TKN-CNKD năm 2026 = tổng S1a" "$(S "select (select revenue from public.tkn_cnkd_data(2026, null) where code = '11') = (select s1a_total from public.book_s1a_check('2026-01-01','2026-12-31'))")"
+chk "bk_stk_data chạy được (owner)" "$(O "select count(*) >= 0 from public.bk_stk_data('all')")"
+chk "bk_stk_data bị chặn với service_role/nhân viên (chỉ owner)" "$(S "select 1 from public.bk_stk_data('all')" >/dev/null 2>&1 && echo f || echo t)"
 step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"

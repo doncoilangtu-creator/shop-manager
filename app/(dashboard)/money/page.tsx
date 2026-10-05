@@ -21,14 +21,16 @@ type Transfer = {
 
 export default async function MoneyPage() {
   const sb = await createClient();
-  const [rows, accRes, trRes, ownerRes] = await Promise.all([
+  const [rows, accRes, trRes, ownerRes, locRes] = await Promise.all([
     rpcOrThrow(sb, "money_balances", undefined, parseMoneyBalances),
-    sb.from("money_accounts").select("id, kind, label, provider, account_no_masked, holder, tax_notified, tax_notified_at, is_default, active").order("gl_account").order("label"),
+    sb.from("money_accounts").select("id, kind, label, provider, account_no_masked, holder, tax_notified, tax_notified_at, is_default, active, location_id").order("gl_account").order("label"),
     sb.from("money_transfers")
       .select("id, transfer_no, transfer_date, amount, memo, voided_at, from:money_accounts!money_transfers_from_account_fkey(label), to:money_accounts!money_transfers_to_account_fkey(label)")
       .order("transfer_date", { ascending: false }).order("created_at", { ascending: false }).limit(20),
     sb.rpc("is_owner"),
+    sb.from("business_locations").select("id, name, status").order("is_hq", { ascending: false }).order("created_at"),
   ]);
+  const locations = ((locRes.data ?? []) as Array<{ id: string; name: string; status: string }>).filter((l) => l.status !== "closed").map((l) => ({ id: l.id, name: l.name }));
   const accounts = unwrap<AccountRow[]>(typed<AccountRow[]>(accRes), "money_accounts");
   const transfers = unwrap<Transfer[]>(typed<Transfer[]>(trRes), "money_transfers");
   const isOwner = ownerRes.data === true;
@@ -47,7 +49,7 @@ export default async function MoneyPage() {
         <div className="flex flex-wrap gap-2">
           <TransferDialog accounts={active} today={today} />
           {isOwner && <OpeningDialog accounts={active} today={today} />}
-          {isOwner && <AccountDialog trigger="new" />}
+          {isOwner && <AccountDialog trigger="new" locations={locations} />}
         </div>
       </div>
 
@@ -112,7 +114,7 @@ export default async function MoneyPage() {
                     {r.unassigned || r.kind === "cash" ? "—" : r.tax_notified ? <Badge>Đã thông báo{r.tax_notified_at ? ` ${formatDate(r.tax_notified_at)}` : ""}</Badge> : <Badge variant="outline">Chưa</Badge>}
                   </TableCell>
                   <TableCell className={`text-right font-medium ${r.balance < 0 ? "text-destructive" : ""}`}>{formatVND(r.balance)}</TableCell>
-                  <TableCell className="text-right">{isOwner && acc ? <AccountDialog trigger="edit" account={acc} /> : null}</TableCell>
+                  <TableCell className="text-right">{isOwner && acc ? <AccountDialog trigger="edit" account={acc} locations={locations} /> : null}</TableCell>
                 </TableRow>
               );
             })}

@@ -21,6 +21,7 @@ export async function closePeriodAction(formData: FormData): Promise<ActionResul
   const { error } = await auth.supabase.rpc("close_period", { p_year: p.data.year, p_month: p.data.month });
   if (error) return { ok: false, error: accountingErrorMessage(error.message) };
   revalidatePath("/reports/accounting");
+  revalidatePath("/books");
   return { ok: true, data: undefined };
 }
 
@@ -32,6 +33,7 @@ export async function reopenPeriodAction(formData: FormData): Promise<ActionResu
   const { error } = await auth.supabase.rpc("reopen_period", { p_year: p.data.year, p_month: p.data.month, p_reason: p.data.reason ?? "" });
   if (error) return { ok: false, error: accountingErrorMessage(error.message) };
   revalidatePath("/reports/accounting");
+  revalidatePath("/books");
   return { ok: true, data: undefined };
 }
 
@@ -43,5 +45,6 @@ export async function postStockAdjustmentsAction(): Promise<ActionResult<{ poste
   const { data, error } = await auth.supabase.rpc("post_stock_adjustments", { p_date: vnDate() });
   if (error) return { ok: false, error: accountingErrorMessage(error.message) };
   revalidatePath("/reports/accounting");
+  revalidatePath("/books");
   return { ok: true, data: { posted: data } };
 }

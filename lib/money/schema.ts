@@ -47,6 +47,7 @@ export const moneyAccountInputSchema = z.object({
     z.string().trim().regex(/^[0-9A-Za-z .-]{4,40}$/, "Số tài khoản 4–30 ký tự chữ/số").optional(),
   ),
   holder: text(120),
+  location_id: z.preprocess((v) => (v === "" ? null : v), z.string().uuid("Địa điểm không hợp lệ").nullable().optional()),
   tax_notified: z.boolean().default(false),
   tax_notified_at: z.preprocess((v) => (v === "" ? null : v), dateStr.nullable().optional()),
   is_default: z.boolean().default(false),
