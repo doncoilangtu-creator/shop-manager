@@ -140,6 +140,19 @@ step "8f. A7: gói hồ sơ kiểm tra"
 chk "book_s1a_check diff=0 (điều kiện gói hồ sơ)" "$(S "select diff = 0 from public.book_s1a_check('2026-01-01','2026-12-31')")"
 chk "record_book_export kind audit_pack (owner) thành công" "$(O "select public.record_book_export(jsonb_build_object('kind','audit_pack','period_from','2026-01-01','period_to','2026-12-31','location_id','','format','zip','file_name','AuditPack_2026.zip','sha256',repeat('cd',32),'row_count',6,'total',0,'template_version','audit_pack/v1')) is not null")"
 
+step "8g. A8: hóa đơn thay thế / điều chỉnh"
+M0=$(O "select count(*) from public.v_sales_missing_einvoice")
+S8G=$(O "select public.post_sale_hkd(null,'2026-10-07','[{\"product_id\":\"$PR\",\"qty\":1,\"unit_price\":2000000}]'::jsonb,'[{\"method\":\"cash\",\"amount\":2000000}]'::jsonb)->>'invoice_id'")
+chk "đơn mới chưa có HĐĐT -> danh sách thiếu HĐ tăng 1" "$(O "select count(*)=$M0+1 from public.v_sales_missing_einvoice where true")"
+E1=$(O "select public.record_sale_einvoice('$S8G','{\"symbol\":\"C26TAA\",\"number\":\"0000801\",\"cqt_code\":\"M1-26-E2E01\"}'::jsonb)->>'id'")
+chk "ghi HĐ gốc (owner) -> danh sách thiếu HĐ về như cũ" "$(O "select count(*)=$M0 from public.v_sales_missing_einvoice")"
+E2=$(O "select public.record_sale_einvoice('$S8G',jsonb_build_object('kind','replace','symbol','C26TAA','number','0000802','replaces_id','$E1'))->>'id'")
+chk "thay thế: gốc -> replaced, bản thay thế issued trỏ replaces_id, có audit" "$(V "select (select status from einvoices where id='$E1')='replaced' and (select status='issued' and replaces_id='$E1' from einvoices where id='$E2') and exists (select 1 from accounting_audit where action='record_sale_einvoice_replace' and detail->>'einvoice_id'='$E2')")"
+JE0=$(V "select count(*) from journal_entries")
+E3=$(O "select public.record_sale_einvoice('$S8G',jsonb_build_object('kind','adjust','symbol','C26TAA','number','0000803','adjust_amount',-100000,'adjust_reason','Giảm giá sau bán'))->>'id'")
+chk "điều chỉnh: tham chiếu bản thay thế đang hiệu lực, không sinh bút toán" "$(V "select (select kind='adjust' and replaces_id='$E2' and adjust_amount=-100000 from einvoices where id='$E3') and (select status from einvoices where id='$E2')='issued' and (select count(*) from journal_entries)=$JE0")"
+chk "v_sales_missing_einvoice đúng (HĐ điều chỉnh không tính, đơn có bản thay thế hiệu lực không thiếu)" "$(O "select count(*)=$M0 and not exists (select 1 from public.v_sales_missing_einvoice where sale_id='$S8G') from public.v_sales_missing_einvoice")"
+
 step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"
