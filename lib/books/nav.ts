@@ -2,4 +2,5 @@
 export const BOOKS_NAV: Array<{ href: string; label: string }> = [
   { href: "/books", label: "Sổ S1a-HKD" },
   { href: "/books/tax-forms", label: "Tờ khai & bảng kê" },
+  { href: "/books/audit-pack", label: "Gói hồ sơ kiểm tra" },
 ];
