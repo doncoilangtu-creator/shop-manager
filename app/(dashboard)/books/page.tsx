@@ -12,6 +12,7 @@ import { s1aByGroup, s1aTotal, S1A_FORM } from "@/lib/books/s1a";
 import { loadS1a } from "@/lib/books/s1a-export";
 import { loadBookHeader } from "@/lib/books/server";
 import { PeriodControls } from "../reports/accounting/period-controls";
+import { BooksNav } from "@/components/books/books-nav";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Sổ sách | Shop Manager" };
@@ -55,6 +56,8 @@ export default async function BooksPage({ searchParams }: { searchParams: Promis
           {S1A_FORM.title} ({S1A_FORM.code}, Thông tư 152/2025/TT-BTC) — sinh tự động từ đơn bán, phiếu trả hàng đã ghi. Số tiền là tổng tiền thanh toán (đã gồm thuế), trừ hàng bán bị trả lại/giảm giá.
         </p>
       </div>
+
+      <BooksNav active="/books" />
 
       <Card className="p-4">
         <form method="get" className="flex flex-wrap items-end gap-3">

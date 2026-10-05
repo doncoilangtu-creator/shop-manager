@@ -12,10 +12,11 @@ const firstIssue = (e: { issues: { message: string }[] }) => e.issues[0]?.messag
 const refresh = () => {
   revalidatePath("/money");
   revalidatePath("/sales/new");
+  revalidatePath("/books/tax-forms");
   revalidatePath("/", "layout");
 };
 
-/** Thêm / sửa tài khoản tiền (chỉ chủ hộ — kiểm tra trong RPC SECURITY DEFINER). Chỉ lưu 4 số cuối của số tài khoản. */
+/** Thêm / sửa tài khoản tiền (chỉ chủ hộ — kiểm tra trong RPC SECURITY DEFINER). Số tài khoản đầy đủ lưu ở bảng riêng chỉ chủ hộ đọc (dùng cho 01/BK-STK); nhân viên chỉ thấy bản che ****1234. */
 export async function saveMoneyAccountAction(payload: unknown): Promise<ActionResult<{ id: string }>> {
   const auth = await requireUser();
   if (!auth.ok) return auth;
@@ -34,6 +35,7 @@ export async function saveMoneyAccountAction(payload: unknown): Promise<ActionRe
   };
   if (isNew) p.kind = d.kind;
   if (d.account_no) p.account_no = d.account_no;
+  if (d.location_id !== undefined) p.location_id = d.location_id ?? "";
   const { data, error } = await auth.supabase.rpc("upsert_money_account", { p_id: d.id ?? null, p });
   if (error) return { ok: false, error: accountingErrorMessage(error.message) };
   refresh();

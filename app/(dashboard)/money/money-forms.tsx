@@ -15,8 +15,9 @@ const selectCls = "h-9 w-full rounded-md border bg-background px-3 text-sm disab
 
 export type AccountRow = {
   id: string; kind: MoneyKind; label: string; provider: string | null; account_no_masked: string | null; holder: string | null;
-  tax_notified: boolean; tax_notified_at: string | null; is_default: boolean; active: boolean;
+  tax_notified: boolean; tax_notified_at: string | null; is_default: boolean; active: boolean; location_id?: string | null;
 };
+export type LocationPick = { id: string; name: string };
 export type AccountPick = { id: string; kind: MoneyKind; label: string; provider: string | null; account_no_masked: string | null };
 
 function useSubmit() {
@@ -37,7 +38,7 @@ function useSubmit() {
 }
 
 /** Thêm / sửa tài khoản tiền (chủ hộ). */
-export function AccountDialog({ account, trigger }: { account?: AccountRow; trigger: "new" | "edit" }) {
+export function AccountDialog({ account, trigger, locations = [] }: { account?: AccountRow; trigger: "new" | "edit"; locations?: LocationPick[] }) {
   const { error, setError, pending, run } = useSubmit();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<MoneyKind>(account?.kind ?? "bank");
@@ -53,6 +54,7 @@ export function AccountDialog({ account, trigger }: { account?: AccountRow; trig
     const s = (k: string) => String(f.get(k) ?? "");
     run(() => saveMoneyAccountAction({
       id: account?.id ?? null, kind, label: s("label"), provider: s("provider"), account_no: s("account_no"), holder: s("holder"),
+      ...(locations.length > 1 && !cash ? { location_id: s("location_id") } : {}),
       tax_notified: !cash && tn, tax_notified_at: !cash && tn ? s("tax_notified_at") : "", is_default: def, active,
     }), isNew ? "Đã thêm tài khoản" : "Đã lưu tài khoản", () => setOpen(false));
   };
@@ -67,7 +69,7 @@ export function AccountDialog({ account, trigger }: { account?: AccountRow; trig
           <form onSubmit={submit} className="space-y-3">
             <DialogHeader>
               <DialogTitle>{isNew ? "Thêm tài khoản tiền" : "Sửa tài khoản tiền"}</DialogTitle>
-              <DialogDescription>Hệ thống chỉ lưu 4 số cuối của số tài khoản để hiển thị. Không nhập mật khẩu/OTP ngân hàng.</DialogDescription>
+              <DialogDescription>Số tài khoản đầy đủ chỉ chủ hộ xem được (dùng cho bảng kê 01/BK-STK); nhân viên chỉ thấy 4 số cuối. Không nhập mật khẩu/OTP ngân hàng.</DialogDescription>
             </DialogHeader>
             <div className="space-y-1">
               <Label htmlFor="ma-kind">Loại</Label>
@@ -80,9 +82,17 @@ export function AccountDialog({ account, trigger }: { account?: AccountRow; trig
               <>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-1"><Label htmlFor="ma-prov">Ngân hàng / nhà cung cấp ví</Label><Input id="ma-prov" name="provider" maxLength={80} defaultValue={account?.provider ?? ""} placeholder="vd: Vietcombank, MoMo" /></div>
-                  <div className="space-y-1"><Label htmlFor="ma-no">Số tài khoản</Label><Input id="ma-no" name="account_no" inputMode="numeric" autoComplete="off" placeholder={account?.account_no_masked ? `Đang lưu ${account.account_no_masked} — nhập để thay` : "chỉ lưu 4 số cuối"} /></div>
+                  <div className="space-y-1"><Label htmlFor="ma-no">Số tài khoản</Label><Input id="ma-no" name="account_no" inputMode="numeric" autoComplete="off" placeholder={account?.account_no_masked ? `Đang lưu ${account.account_no_masked} — nhập để thay` : "số tài khoản / số hiệu ví"} /></div>
                 </div>
                 <div className="space-y-1"><Label htmlFor="ma-holder">Chủ tài khoản</Label><Input id="ma-holder" name="holder" maxLength={120} defaultValue={account?.holder ?? ""} /></div>
+                {locations.length > 1 && (
+                  <div className="space-y-1"><Label htmlFor="ma-loc">Địa điểm kinh doanh dùng tài khoản (01/BK-STK)</Label>
+                    <select id="ma-loc" name="location_id" className={selectCls} defaultValue={account?.location_id ?? ""}>
+                      <option value="">Trụ sở (mặc định)</option>
+                      {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  </div>
+                )}
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={tn} onChange={(e) => setTn(e.target.checked)} />Đã thông báo số tài khoản cho cơ quan thuế (mẫu 01/BK-STK)</label>
                 {tn && <div className="space-y-1"><Label htmlFor="ma-tna">Ngày thông báo</Label><Input id="ma-tna" name="tax_notified_at" type="date" defaultValue={account?.tax_notified_at ?? ""} /></div>}
               </>
