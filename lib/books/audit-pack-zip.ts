@@ -181,7 +181,7 @@ export async function assembleAuditZip(input: AuditPackInput, files: PackFile[])
   const manifestBytes = enc.encode(JSON.stringify(manifest, null, 2) + "\n");
   // SHA256SUMS phủ cả README và manifest để kiểm tra toàn vẹn cả gói
   const all: PackFile[] = [...files, { path: "README.txt", bytes: readme }, { path: "manifest.json", bytes: manifestBytes }];
-  const sums = enc.encode(sortFiles(all).map((f) => `${sha256Hex(f.bytes)}  ${f.path}`).join("\n") + "\n");
+  const sums = enc.encode(buildSha256Sums(all));
   const zip = new JSZip();
   const opt = { date: FIXED_DATE, createFolders: false, binary: true };
   zip.file("README.txt", readme, opt);
