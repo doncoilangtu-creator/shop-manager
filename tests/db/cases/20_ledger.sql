@@ -1,6 +1,7 @@
 -- Accounting core: double entry, append-only, balanced, reversal, partner dimension
 \ir ../_lib.sql
 begin;
+select pg_temp.set_mode('enterprise'); -- legacy (pre-0014) behaviour under test; the HKD default is covered by case 32
 do $$
 declare u uuid := pg_temp.mk_staff(); c uuid := pg_temp.mk_customer(); s uuid := pg_temp.mk_supplier();
   e1 uuid; e2 uuid; r uuid; e text; n int; d numeric; cr numeric; pid uuid;

@@ -12,7 +12,7 @@ S=$(q "insert into suppliers(name) values ('conc') returning id" | head -1)
 P=$(q "insert into products(sku,name) values ('ACC-CONC','conc') returning id" | head -1)
 q "$svc select public.post_purchase_bill('$S','2025-09-01',null,'[{\"product_id\":\"$P\",\"qty\":10,\"unit_cost\":100000}]'::jsonb)" >/dev/null
 for w in 1 2 3; do
-  ( for _ in 1 2 3 4 5 6; do psql -X -Atq -d $DB -c "$svc select public.post_sales_invoice('$C','2025-09-05',null,'[{\"product_id\":\"$P\",\"qty\":1,\"unit_price\":150000,\"vat_rate\":10}]'::jsonb)" >/dev/null 2>&1; done ) &
+  ( for _ in 1 2 3 4 5 6; do psql -X -Atq -d $DB -c "$svc select public.post_sales_invoice('$C','2025-09-05',null,'[{\"product_id\":\"$P\",\"qty\":1,\"unit_price\":150000,\"vat_rate\":0}]'::jsonb)" >/dev/null 2>&1; done ) &
 done; wait
 N=$(q "select count(*) from sales_invoices where customer_id='$C'" | tail -1)
 STK=$(q "select stock_qty||'/'||stock_value from products where id='$P'" | tail -1)

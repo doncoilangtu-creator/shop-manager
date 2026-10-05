@@ -8,7 +8,7 @@ run() { psql -X -Atq -d shop_test -c "$1" >/dev/null 2>&1; }
 svc="set role service_role; select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false);"
 # 4 parallel sessions, 25 inbound each
 for i in 1 2 3 4; do
-  ( for _ in $(seq 25); do psql -X -Atq -d shop_test -c "$svc select public.stock_adjust('$P','in',1)" >/dev/null 2>&1; done ) &
+  ( for _ in $(seq 25); do psql -X -Atq -d shop_test -c "$svc select public.stock_adjust('$P','in',1,null,'opening')" >/dev/null 2>&1; done ) &
 done; wait
 IN=$(psql -X -Atq -d shop_test -c "select stock_qty from products where id='$P'")
 # 2 sessions try to take 1 unit x 60 each from 100 -> 100 succeed at most, 20 fail with insufficient_stock; stock must end at 0

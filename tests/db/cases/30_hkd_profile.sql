@@ -145,7 +145,9 @@ begin
   perform pg_temp.rec('HKD-revenue-void-excluded', 'control', pg_temp.ok(s->>'level' = 'warning' and (s->>'revenue')::numeric = 999999999), 'hóa đơn hủy không tính vào doanh thu: ' || s::text);
 
   -- VAT-inclusive total counts (legacy invoices with VAT): taxable revenue = tổng tiền ghi trên hóa đơn
+  perform pg_temp.set_mode('enterprise');   -- hóa đơn có VAT chỉ còn ở chế độ legacy
   perform public.post_sales_invoice(c, date '2035-01-10', null, jsonb_build_array(jsonb_build_object('product_id', p, 'qty', 1, 'unit_price', 1000000, 'vat_rate', 10)), null, null, true);
+  perform pg_temp.set_mode('hkd');
   perform pg_temp.rec('HKD-revenue-uses-gross-total', 'control', pg_temp.ok(public.revenue_ytd(2035) = 1100000), 'doanh thu = tổng tiền hóa đơn gồm VAT 10 %: ' || public.revenue_ytd(2035));
 
   -- changing the threshold = one row, no code change

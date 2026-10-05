@@ -1,6 +1,7 @@
 -- C6: quotation status FSM, frozen content, invoice_from_quotation
 \ir ../_lib.sql
 begin;
+select pg_temp.set_mode('enterprise'); -- legacy (pre-0014) behaviour under test; the HKD default is covered by case 32
 do $$
 declare u uuid := pg_temp.mk_staff(); c uuid := pg_temp.mk_customer(); p uuid := pg_temp.mk_product(1000000, 20); s uuid := pg_temp.mk_supplier();
   q jsonb; qid uuid; e text; r jsonb; n int; qt numeric; st text;
