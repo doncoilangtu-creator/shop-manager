@@ -16,6 +16,7 @@ import {
   PackagePlus,
   Landmark,
   BookOpen,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,7 @@ const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inventory", label: "Kho", icon: Package },
   { href: "/sales", label: "Bán hàng", icon: ShoppingCart },
+  { href: "/ban-nhanh", label: "Bán nhanh", icon: Zap },
   { href: "/sales/missing-einvoice", label: "Đơn chưa có HĐĐT", icon: FileWarning },
   { href: "/purchases", label: "Mua hàng", icon: PackagePlus },
   { href: "/money", label: "Tiền & Quỹ", icon: Landmark },

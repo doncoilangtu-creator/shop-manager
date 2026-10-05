@@ -69,11 +69,20 @@ export default async function DashboardHome() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Tổng quan hoạt động cửa hàng
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Tổng quan hoạt động cửa hàng
+          </p>
+        </div>
+        <Link
+          href="/ban-nhanh"
+          className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          <Zap className="h-4 w-4" />
+          Bán nhanh
+        </Link>
       </div>
 
       {einv && <MissingEinvoiceReminderCard count={einv.count} total={einv.total} period={einv.period} />}
