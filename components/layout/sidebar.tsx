@@ -8,6 +8,7 @@ import {
   Users,
   Truck,
   FileText,
+  FileWarning,
   Wrench,
   BarChart3,
   Settings,
@@ -22,6 +23,7 @@ const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inventory", label: "Kho", icon: Package },
   { href: "/sales", label: "Bán hàng", icon: ShoppingCart },
+  { href: "/sales/missing-einvoice", label: "Đơn chưa có HĐĐT", icon: FileWarning },
   { href: "/purchases", label: "Mua hàng", icon: PackagePlus },
   { href: "/money", label: "Tiền & Quỹ", icon: Landmark },
   { href: "/customers", label: "Khách hàng", icon: Users },
@@ -49,8 +51,9 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 space-y-1 p-3">
         {nav.map((item) => {
-          const active =
-            item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          // Mục khớp dài nhất thắng (vd. /sales/missing-einvoice không làm sáng cả /sales).
+          const matches = (h: string) => (h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(h + "/"));
+          const active = matches(item.href) && !nav.some((o) => o.href.length > item.href.length && o.href.startsWith(item.href + "/") && matches(o.href));
           return (
             <Link
               key={item.href}

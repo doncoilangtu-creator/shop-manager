@@ -10,6 +10,10 @@ import { Package, AlertTriangle, Briefcase, Wrench, Receipt, TrendingUp } from "
 import { createClient } from "@/lib/supabase/server";
 import { parseDashboard, rpcOrThrow } from "@/lib/reports";
 import { formatVND, formatDate } from "@/lib/utils";
+import { cookies } from "next/headers";
+import { vnDate } from "@/lib/time";
+import { EINV_REMINDER_COOKIE, defaultMissingPeriod, reminderVisible, summarizeMissing } from "@/lib/einvoice/missing";
+import { MissingEinvoiceReminderCard } from "@/components/einvoice/missing-reminder-card";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +48,24 @@ async function getDashboardStats() {
   };
 }
 
+/** Nhắc đơn bán quý hiện tại chưa có HĐĐT; null nếu bị tắt/tạm ẩn, không có đơn hoặc truy vấn lỗi (chỉ ẩn thẻ). */
+async function getEinvoiceReminder() {
+  try {
+    const today = vnDate();
+    if (!reminderVisible((await cookies()).get(EINV_REMINDER_COOKIE)?.value, today)) return null;
+    const period = defaultMissingPeriod(today);
+    const sb = await createClient();
+    const { data, error } = await sb.from("v_sales_missing_einvoice").select("total").gte("invoice_date", period.from).lte("invoice_date", period.to).limit(10000);
+    if (error || !data) return null;
+    const sum = summarizeMissing(data.map((r: { total: unknown }) => ({ total: Number(r.total) })));
+    return sum.count > 0 ? { ...sum, period } : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function DashboardHome() {
-  const s = await getDashboardStats();
+  const [s, einv] = await Promise.all([getDashboardStats(), getEinvoiceReminder()]);
 
   return (
     <div className="space-y-6 p-6">
@@ -55,6 +75,8 @@ export default async function DashboardHome() {
           Tổng quan hoạt động cửa hàng
         </p>
       </div>
+
+      {einv && <MissingEinvoiceReminderCard count={einv.count} total={einv.total} period={einv.period} />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Link href="/inventory">
