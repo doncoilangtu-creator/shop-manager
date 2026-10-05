@@ -75,6 +75,15 @@ describe("parseBanArgs", () => {
     expect(parseBanArgs(["Lan", "HP-1", "2", "KB", "1", "CK"])).toEqual({ keyword: "Lan", items: [{ sku: "HP-1", qty: 2 }, { sku: "KB", qty: 1 }], method: "bank" });
     expect(parseBanArgs(["lẻ", "HP-1", "2", "tm"])).toMatchObject({ keyword: null, method: "cash" });
   });
+  it("accepts leading tm|ck and SKU:qty (bán nhanh style)", () => {
+    expect(parseBanArgs(["tm", "HP-1234:2"])).toEqual({ keyword: null, items: [{ sku: "HP-1234", qty: 2 }], method: "cash" });
+    expect(parseBanArgs(["ck", "HP-1234:2", "KB-1:1"])).toEqual({
+      keyword: null,
+      items: [{ sku: "HP-1234", qty: 2 }, { sku: "KB-1", qty: 1 }],
+      method: "bank",
+    });
+    expect(parseBanArgs(["Lan", "HP-1:2", "ck"])).toEqual({ keyword: "Lan", items: [{ sku: "HP-1", qty: 2 }], method: "bank" });
+  });
   it("rejects bad quantities and empty input", () => {
     expect(parseBanArgs([])).toHaveProperty("error");
     expect(parseBanArgs(["HP-1", "x"])).toHaveProperty("error");
