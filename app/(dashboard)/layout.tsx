@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { ThresholdBanner } from "@/components/threshold-banner";
 
 export default async function DashboardLayout({
   children,
@@ -22,7 +23,10 @@ export default async function DashboardLayout({
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Header userEmail={user.email} />
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6">
+          <ThresholdBanner />
+          {children}
+        </main>
       </div>
     </div>
   );

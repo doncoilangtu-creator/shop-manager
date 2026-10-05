@@ -95,7 +95,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ### 4. Chạy migrations
 
-Chạy **theo thứ tự tên file** các migration trong `supabase/migrations/` (SQL Editor, hoặc `supabase db push` trên project **staging** trước): `0001_init` → `0002_quotation_pdf_url` → `0003_c2_hardening` → `0004_accounting_ledger` → `0005_inventory_costing` → `0006_sales_purchases_ar_ap` → `0007_c4_stock_count` → `0008_c5_fifo_allocation` → `0009_c6_quotations` → `0010_c8_reports`. Đọc `supabase/README-migrations.md` trước khi chạy trên dữ liệu thật (0003 siết RLS, thu hồi quyền anon, backfill danh sách nhân viên từ `auth.users`; 0004–0006 tạo sổ kế toán — **chưa kiểm thử trên Supabase thật**, chỉ trên Postgres cục bộ).
+Chạy **theo thứ tự tên file** các migration trong `supabase/migrations/` (SQL Editor, hoặc `supabase db push` trên project **staging** trước): `0001_init` → `0002_quotation_pdf_url` → `0003_c2_hardening` → `0004_accounting_ledger` → `0005_inventory_costing` → `0006_sales_purchases_ar_ap` → `0007_c4_stock_count` → `0008_c5_fifo_allocation` → `0009_c6_quotations` → `0010_c8_reports` → `0011_security_hardening` → `0012_hkd_profile_tax`. Đọc `supabase/README-migrations.md` trước khi chạy trên dữ liệu thật (0003 siết RLS, thu hồi quyền anon, backfill danh sách nhân viên từ `auth.users`; 0004–0006 tạo sổ kế toán — **chưa kiểm thử trên Supabase thật**, chỉ trên Postgres cục bộ).
 
 Sau đó chạy tiếp `supabase/seed.sql` (tuỳ chọn — tạo vài record demo).
 
@@ -187,6 +187,7 @@ CI (`.github/workflows/ci.yml`): job `web`, `bot` (chặn khi audit lỗi), job 
 - **Kế toán** — Sổ cái kép append-only (sửa = bút toán đảo), khóa/mở kỳ (chỉ owner), giá vốn bình quân, hóa đơn bán/mua, thu/chi tiền phân bổ FIFO, công nợ phải thu/trả, tuổi nợ, báo cáo VAT, bảng cân đối phát sinh, đối chiếu sổ phụ ↔ sổ cái.
 - **Bảo trì** — Hợp đồng bảo trì DN, ticket workflow (tiếp nhận → phân công → xử lý → chờ ký → ký → đóng), **ký online** trên web (canvas signature pad), báo cáo tháng.
 - **Dashboard** — Tổng quan: tổng SP, sắp hết hàng, khách DN, ticket mở, BG chờ duyệt, doanh thu tháng, activity gần nhất.
+- **Hộ kinh doanh (A1)** — `/settings`: hồ sơ HKD (tên, chủ hộ, MST/CCCD, địa chỉ, ngành nghề, nhóm ngành thuế, phương pháp thuế, ngày bắt đầu), địa điểm kinh doanh; chỉ **owner** sửa, CCCD chỉ owner xem. Theo dõi **doanh thu năm so với ngưỡng 1 tỷ** (cảnh báo 80 %/100 % bằng banner + `/reports/revenue`). Ngưỡng/tỷ lệ là dữ liệu có ngày hiệu lực, không hard-code. Xem `docs/hkd-compliance.md`.
 - **Báo cáo** — Doanh thu + lãi gộp 12 tháng (từ sổ cái, giờ Việt Nam), top 10 SP/khách (gộp trong SQL), báo cáo kế toán (`/reports/accounting`), báo cáo bảo trì tháng (`/maintenance/reports`).
 - **Telegram Bot** — 8 lệnh chủ shop (`/ton`, `/nhap`, `/ban`, `/khach`, `/baotri`, `/doanhthu`, `/top`, `/start`) + 3 lệnh khách DN (`/hopdong`, `/yeucaubt`, `/ticket`). `/nhap` gọi `stock_adjust`, `/doanhthu` và `/top` đọc từ sổ cái. `/ban` (hộ kinh doanh, **giá đã gồm VAT**): ghi hóa đơn qua `post_sales_invoice` với **VAT 0%** (đơn giá = giá bán, tổng = giá × SL, hạn thanh toán = ngày bán) rồi **thu tiền mặt ngay** (TK 111) qua `post_receipt`, phân bổ vào đúng hóa đơn đó — công nợ phải thu của lần bán này = 0. Nếu thu tiền lỗi, bot tự đảo hóa đơn. Tên khách trùng nhiều người → bot hỏi lại, chưa ghi gì. Hỗ trợ tên có dấu cách: `/ban "Nguyen Van A" HP-1234 2`.
 
@@ -220,7 +221,7 @@ SUPABASE_SERVICE_ROLE_KEY=eyJh...
 INITIAL_ADMIN_PASSWORD=mat_khau_cua_ban
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# Tùy chọn (hiển thị trên PDF báo giá)
+# Tùy chọn — chỉ là dự phòng khi chưa nhập Hồ sơ hộ kinh doanh ở Cài đặt (hiển thị trên PDF báo giá)
 SHOP_NAME=Cửa hàng Máy tính ABC
 SHOP_TAX_CODE=0123456789
 SHOP_ADDRESS=123 Nguyễn Văn A, Q1, TP.HCM
@@ -291,7 +292,7 @@ shop-manager/
 ├── components/                   # UI components (shadcn + custom)
 ├── lib/                          # Supabase clients + utils
 ├── supabase/
-│   ├── migrations/               # 0001…0010 (xem supabase/README-migrations.md)
+│   ├── migrations/               # 0001…0012 (xem supabase/README-migrations.md)
 │   └── seed.sql                  # Data mẫu
 ├── bot/                          # Telegram bot (Node.js + grammY)
 │   ├── src/

@@ -10,6 +10,7 @@ import {
   FileText,
   Wrench,
   BarChart3,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ const nav = [
   { href: "/quotations", label: "Báo giá", icon: FileText },
   { href: "/maintenance", label: "Bảo trì", icon: Wrench },
   { href: "/reports", label: "Báo cáo", icon: BarChart3 },
+  { href: "/settings", label: "Cài đặt", icon: Settings },
 ];
 
 export function Sidebar() {
