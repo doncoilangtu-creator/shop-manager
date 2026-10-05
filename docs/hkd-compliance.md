@@ -37,3 +37,35 @@ Báo giá PDF lấy tên/MST/địa chỉ/SĐT/email từ hồ sơ; biến môi 
 4. **Chỉ 4 nhóm ngành** được seed. Cho thuê tài sản và nội dung số chưa seed vì tỷ lệ GTGT chưa xác minh (kế hoạch mục E.2). Phân loại “sửa chữa/cài đặt” = dịch vụ 5 %/2 % và “lắp ráp theo yêu cầu” = 3 %/1,5 % **cần kế toán thuế xác nhận**.
 5. **Ngưỡng theo năm**: năm chưa có dòng cấu hình (trước 2026) hiển thị “chưa cấu hình ngưỡng”, không tự áp 1 tỷ.
 6. **Doanh thu của hóa đơn cũ có VAT** (tạo trước khi chuyển sang chế độ HKD) tính theo **tổng tiền gồm VAT**.
+
+## A2 — Bán hàng đúng chế độ HKD (migration `0013_hkd_sales.sql`)
+
+### Nguyên tắc kế toán
+* **Một đơn bán = một giao dịch DB** (`post_sale_hkd`, UI `/sales/new`, bot `/ban`): xuất kho (giá vốn bình quân) + các khoản thu + công nợ + **một bút toán cân**:
+  `Nợ 111 (tiền mặt) · Nợ 112 (chuyển khoản) · Nợ 131 (phần còn nợ, chỉ khách có tên) · Có 511 = tổng tiền` và `Nợ 632 / Có 156`.
+  Lỗi ở bất kỳ bước nào ⇒ không để lại dấu vết (không còn cơ chế “ghi hóa đơn rồi tự đảo nếu thu tiền lỗi” của bot).
+* **Giá đã gồm thuế, không tách VAT**: `vat_amount = 0`, `subtotal = total`, **không có dòng TK 3331/133**. RPC từ chối dòng có `vat_rate ≠ 0` (`vat_not_allowed_hkd`).
+* **Khách lẻ** (`customers.is_walkin`, một dòng hệ thống “Khách lẻ”, không sửa/xóa được): nếu không chọn khách thì bán cho Khách lẻ, **phải thanh toán đủ** (trigger chặn ở mọi đường tạo hóa đơn).
+* **Nhiều phương thức thanh toán** trong một đơn (`sale_payments`: tiền mặt / chuyển khoản, kèm ghi chú). A4 sẽ gắn từng khoản với tài khoản tiền cụ thể.
+* **Nhóm ngành thuế theo từng dòng**: dòng → sản phẩm (`products.tax_group`) → hồ sơ HKD (`main_tax_group`) → `goods`. Tỷ lệ GTGT/TNCN **chụp lại tại ngày bán** (`vat_pct_snapshot`, `pit_pct_snapshot`); đổi bảng `tax_rates` không làm đổi hóa đơn cũ.
+* **Kênh bán** (cửa hàng / online / sàn TMĐT / khác), **địa điểm** (mặc định trụ sở), **thông tin người mua** tùy chọn (tên, MST, địa chỉ, email).
+
+### Hàng bán trả lại / giảm giá hàng bán
+`post_sale_return` ghi **TK 521** (không sửa 511 của đơn gốc): `Nợ 521 · Nợ 156 / Có 632 (nhập lại kho theo đúng giá vốn gốc) · Có 131 (phần trừ vào công nợ còn lại của chính đơn đó) · Có 111/112 (hoàn tiền)`.
+Trả một phần/nhiều lần, giới hạn số lượng và số tiền theo từng dòng (lần trả cuối lấy phần còn lại, không lệch làm tròn), giảm giá không trả hàng (số lượng 0). `reverse_sales_return` hủy phiếu trả. Không hủy được đơn khi còn phiếu trả hàng hoặc hóa đơn điện tử còn hiệu lực. Đơn lập theo cách cũ có tách VAT chưa hỗ trợ trả hàng tự động.
+Doanh thu tính ngưỡng 1 tỷ (`v_revenue_events`, `revenue_ytd`), P&L tháng, top sản phẩm/khách hàng, dashboard đều là **doanh thu thuần = 511 − 521**. `revenue_by_tax_group(năm)` chia doanh thu theo nhóm ngành (khớp tổng `revenue_ytd`), hiển thị ở `/reports/revenue`.
+
+### Hóa đơn điện tử (chỉ lưu thông tin, không tích hợp API)
+Bảng `einvoices` lưu **ký hiệu, số, mã tra cứu, đường dẫn tra cứu, nhà cung cấp, ngày lập** của hóa đơn do phần mềm HĐĐT bên ngoài phát hành; RPC `record_sale_einvoice` (gốc / thay thế / điều chỉnh) và `cancel_sale_einvoice` (bắt buộc lý do, có nhật ký). Ràng buộc: mỗi đơn chỉ 1 hóa đơn gốc/thay thế còn hiệu lực; (ký hiệu, số) không trùng; đường dẫn chỉ `http(s)://`. Số đơn nội bộ `INV-…` **khác** số hóa đơn điện tử. View `v_sales_missing_einvoice` + bộ lọc “Chưa có hóa đơn điện tử” ở `/sales`.
+
+### Quyền & bảo mật
+Bảng mới (`sales_returns`, `sales_return_lines`, `sale_payments`, `einvoices`) bật RLS, `anon` không có quyền, `authenticated` chỉ `select` (staff); ghi qua RPC `SECURITY DEFINER` có `search_path` cố định. Chứng từ bán/trả/thu bất biến (trigger `trg_doc_immutable`), sửa sai = `reverse_*`. Hàm trigger thu hồi EXECUTE của public/anon.
+
+### Quyết định cần chủ xác nhận (A2)
+1. **Một bút toán/đơn, không tạo phiếu thu riêng** cho phần thu lúc bán (`paid_at_sale`); thu nợ sau đó vẫn dùng phiếu thu/phân bổ cũ.
+2. **Hàng bán trả lại ghi vào TK 521** (giảm doanh thu thuần) thay vì sửa/hủy đơn gốc, để vẫn có vết và doanh thu thuế tính trừ đúng kỳ phát sinh (ngày trả hàng).
+3. **Khách lẻ phải thanh toán đủ**; không cho ghi nợ khách lẻ. Không ghi nhận “thu dư/tiền thối” (tổng thu > tổng tiền bị từ chối).
+4. **Số hóa đơn điện tử tách khỏi số đơn nội bộ**; đơn có HĐĐT còn hiệu lực không hủy được cho tới khi đánh dấu hủy HĐĐT (chủ phải xử lý hủy/điều chỉnh ở phần mềm HĐĐT trước).
+5. **Quy tắc nhóm ngành của dòng** (dòng → sản phẩm → hồ sơ → hàng hóa). Dịch vụ/lắp ráp cần kế toán thuế xác nhận nhóm.
+6. **Hoàn tiền trả hàng**: tự trừ vào công nợ còn lại của chính đơn trước, phần còn lại hoàn bằng phương thức chọn (mặc định tiền mặt).
+7. **Đơn cũ lập bằng `post_sales_invoice` (có VAT)** vẫn xem được, nhưng chưa hỗ trợ trả hàng tự động; A3 sẽ gỡ VAT khỏi luồng này.

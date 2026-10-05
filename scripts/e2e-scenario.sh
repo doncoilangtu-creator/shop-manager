@@ -74,17 +74,14 @@ chk "stock_adjust: tồn 10 -> 15" "$(V "select stock_qty=15 from products where
 OLD=$(S "select public.post_sales_invoice('$C','2026-10-03','2026-11-03','[{\"product_id\":\"$PR\",\"qty\":1,\"unit_price\":5000000,\"vat_rate\":0}]'::jsonb,'Bán chịu cũ')")
 OLD_ID=$(echo "$OLD" | python3 -c 'import sys,json;print(json.load(sys.stdin)["invoice_id"])')
 CASH0=$(V "select public.account_balance('111')"); VAT0=$(V "select public.account_balance('3331')"); REV0=$(V "select public.account_balance('511')")
-# Đúng như bot làm (bot/src/commands/owner.ts): post_sales_invoice(due = ngày bán, vat_rate 0) rồi post_receipt('cash') phân bổ vào CHÍNH hóa đơn đó.
-QS=$(S "select public.post_sales_invoice('$C','2026-10-04','2026-10-04','[{\"product_id\":\"$PR\",\"qty\":2,\"unit_price\":20000000,\"vat_rate\":0}]'::jsonb,'Bán qua Telegram bot',null,true)")
+# Đúng như bot làm (bot/src/commands/owner.ts): MỘT lệnh gọi post_sale_hkd (khách có tên, giá đã gồm thuế, thu đủ tiền mặt ngay).
+QS=$(S "select public.post_sale_hkd('$C','2026-10-04','[{\"product_id\":\"$PR\",\"qty\":2,\"unit_price\":20000000}]'::jsonb,'[{\"method\":\"cash\",\"amount\":40000000,\"note\":\"Thu ngay qua bot\"}]'::jsonb,'store',null,null,'Bán qua Telegram bot')")
 echo "$QS"
 QS_ID=$(echo "$QS" | python3 -c 'import sys,json;print(json.load(sys.stdin)["invoice_id"])')
-QS_TOTAL=$(echo "$QS" | python3 -c 'import sys,json;print(json.load(sys.stdin)["total"])')
-QR=$(S "select public.post_receipt('$C',$QS_TOTAL,'cash','2026-10-04',jsonb_build_array(jsonb_build_object('invoice_id','$QS_ID','amount',$QS_TOTAL)),'Thu tiền ngay')")
-echo "$QR"
-chk "tổng hóa đơn = giá x SL = 40.000.000 (giá đã gồm VAT), VAT = 0" "$(V "select total=40000000 and vat_amount=0 and subtotal=40000000 from sales_invoices where id='$QS_ID'")"
-chk "hạn thanh toán = ngày bán (không còn hạn 7 ngày)" "$(V "select due_date=invoice_date from sales_invoices where id='$QS_ID'")"
-chk "hóa đơn bán nhanh còn nợ 0" "$(V "select outstanding=0 from v_sales_invoice_open where invoice_id='$QS_ID'")"
-chk "phiếu thu là tiền mặt, phân bổ đủ 40.000.000, không còn dư chưa phân bổ" "$(V "select p.method='cash' and p.amount=40000000 and (select sum(amount) from payment_allocations where payment_id=p.id)=40000000 from payments p where p.payment_no='$(echo "$QR" | python3 -c 'import sys,json;print(json.load(sys.stdin)["payment_no"])')'")"
+chk "tổng hóa đơn = giá x SL = 40.000.000 (giá đã gồm VAT), VAT = 0" "$(V "select total=40000000 and vat_amount=0 and subtotal=40000000 and paid_at_sale=40000000 and sale_source='hkd_sale' from sales_invoices where id='$QS_ID'")"
+chk "hạn thanh toán = ngày bán" "$(V "select due_date=invoice_date from sales_invoices where id='$QS_ID'")"
+chk "đơn bán nhanh còn nợ 0 (không cần phiếu thu riêng)" "$(V "select outstanding=0 from v_sales_invoice_open where invoice_id='$QS_ID'")"
+chk "thu tiền mặt 40.000.000 ghi trong cùng giao dịch, một bút toán cân" "$(V "select (select count(*) from sale_payments where sale_id='$QS_ID' and method='cash' and amount=40000000)=1 and (select count(*) from journal_entries where source_id='$QS_ID')=1")"
 chk "TK 111 tăng đúng 40.000.000; doanh thu 511 tăng 40.000.000; VAT đầu ra 3331 không đổi" "$(V "select public.account_balance('111')=$CASH0+40000000 and public.account_balance('511')=$REV0+40000000 and public.account_balance('3331')=$VAT0")"
 chk "không dùng FIFO: hóa đơn chịu cũ vẫn nợ nguyên 5.000.000; công nợ khách chỉ còn khoản cũ" "$(V "select (select outstanding=5000000 from v_sales_invoice_open where invoice_id='$OLD_ID') and public.account_balance('131')=5000000")"
 chk "bán nhanh: tồn 15 -> 12 (1 bán chịu + 2 bán nhanh)" "$(V "select stock_qty=12 from products where id='$PR'")"
@@ -96,6 +93,23 @@ chk "dashboard: công nợ phải thu = 5.000.000 (chỉ khoản bán chịu cũ
 chk "trước khi hạch toán: /nhap (stock_adjust) làm TK 156 lệch sổ phụ (đúng như thiết kế - cần post_stock_adjustments)" "$(S "select exists (select 1 from public.accounting_reconciliation() where check_name like 'Inventory%' and diff <> 0)")"
 S "select public.post_stock_adjustments('2026-10-04')" >/dev/null
 chk "sau post_stock_adjustments: mọi đối chiếu = 0" "$(S "select bool_and(diff=0) from public.accounting_reconciliation()")"
+step "8. HKD: khách lẻ, nhiều phương thức thanh toán, trả hàng, hóa đơn điện tử, ngưỡng doanh thu"
+WK=$(S "select public.post_sale_hkd(null,'2026-10-04','[{\"product_id\":\"$PR\",\"qty\":1,\"unit_price\":20000000}]'::jsonb,'[{\"method\":\"cash\",\"amount\":5000000},{\"method\":\"bank\",\"amount\":15000000}]'::jsonb)")
+echo "$WK"
+WK_ID=$(echo "$WK" | python3 -c 'import sys,json;print(json.load(sys.stdin)["invoice_id"])')
+chk "khách lẻ: thu đủ bằng tiền mặt + chuyển khoản, không công nợ" "$(V "select (select is_walkin from customers where id=i.customer_id) and outstanding=0 from sales_invoices i join v_sales_invoice_open o on o.invoice_id=i.id where i.id='$WK_ID'")"
+OUT3=$(psql -X -Atq -d $DB -c "$SVC select public.post_sale_hkd(null,'2026-10-04','[{\"product_id\":\"$PR\",\"qty\":1,\"unit_price\":20000000}]'::jsonb,'[]'::jsonb)" 2>&1 | grep -i ERROR | head -1)
+echo "  khách lẻ không trả tiền: $OUT3"
+chk "khách lẻ không được ghi nợ" "$(echo "$OUT3" | grep -q walkin_must_pay_in_full && echo t || echo f)"
+EI=$(S "select public.record_sale_einvoice('$WK_ID','{\"symbol\":\"C26TAA\",\"number\":\"0000001\",\"lookup_code\":\"ABC\"}'::jsonb)")
+chk "lưu số hóa đơn điện tử + mã tra cứu (không tích hợp nhà cung cấp)" "$(V "select exists (select 1 from einvoices where sale_id='$WK_ID' and number='0000001' and status='issued')")"
+LINE=$(V "select id from sales_invoice_lines where invoice_id='$WK_ID' limit 1")
+RT=$(S "select public.post_sale_return('$WK_ID','2026-10-05','[{\"sale_line_id\":\"$LINE\",\"qty\":1}]'::jsonb,null,'Khách đổi ý',  'bank')")
+echo "$RT"
+chk "trả hàng: hoàn 20.000.000 chuyển khoản, nhập lại kho, 521 ghi nhận" "$(V "select public.account_balance('521')=20000000 and (select stock_qty from products where id='$PR')=12")"
+chk "doanh thu tính ngưỡng đã trừ hàng trả lại (khớp 511 - 521 + VAT hóa đơn cũ)" "$(S "select public.revenue_ytd(2026)=public.account_balance('511')-public.account_balance('521')+public.account_balance('3331')")"
+chk "doanh thu theo nhóm ngành khớp tổng doanh thu năm" "$(S "select (select sum(revenue) from public.revenue_by_tax_group(2026))=public.revenue_ytd(2026)")"
+chk "đối chiếu sổ phụ = 0 sau bán/trả hàng" "$(S "select bool_and(diff=0) from public.accounting_reconciliation()")"
 step "9. Kiểm tra cuối"
 chk "tổng Nợ = tổng Có toàn sổ" "$(V "select sum(debit)=sum(credit) from journal_lines")"
 chk "số thứ tự chứng từ liền mạch" "$(V "select count(*)=max(substring(entry_no from '[0-9]+\$')::int) - min(substring(entry_no from '[0-9]+\$')::int) + 1 from journal_entries where entry_no like 'JE-2026-%'")"

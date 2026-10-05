@@ -54,11 +54,13 @@ Deploy note: the Telegram bot built BEFORE branch `refactor/c9-bot` writes `prod
 Tests: `tests/db/cases/25..28`. Full run: `bash tests/db/run.sh --strict`.
 Untested on real Supabase: the guarded storage-bucket statement in 0009, RLS through PostgREST, any role/grant difference between Supabase and the local compat layer. Apply to a staging project first.
 
-## 0011–0012 (security hardening, A1)
+## 0011–0013 (security hardening, A1, A2)
 
 | file | content |
 |---|---|
 | 0011_security_hardening.sql | revoke EXECUTE on trigger functions, pin `search_path` on 12 functions, `(select auth.uid())` in `app_users_self_read` |
 | 0012_hkd_profile_tax.sql | **A1 — hộ kinh doanh**: `business_profile` (1 row; CCCD readable by owner only), `business_locations`, `tax_groups`, `tax_rates`, `legal_thresholds` (effective-dated, threshold 1 tỷ is a row not code), RPCs `set_business_profile`, `get_business_profile`, `upsert_business_location`, `set_legal_threshold` (owner only), `revenue_ytd`, `revenue_by_month`, `threshold_status` (warning ≥ 80 %, exceeded ≥ 100 %), view `v_revenue_events` |
 
-Forward-only; safe on the (almost empty) production DB: adds tables/functions only, no existing row is touched. Tests: `tests/db/cases/30_hkd_profile.sql`. Details and open decisions: `docs/hkd-compliance.md`.
+| 0013_hkd_sales.sql | **A2 — bán hàng HKD**: seeded walk-in customer `Khách lẻ` (`customers.is_walkin`), `sales_invoices` +`paid_at_sale/channel/location_id/buyer/sale_source`, `sales_invoice_lines` +`tax_group` + rate snapshots, `products.tax_group`, tables `sale_payments`, `sales_returns`, `sales_return_lines`, `einvoices`; RPCs `post_sale_hkd` (atomic, one balanced entry, no 3331), `post_sale_return`/`reverse_sales_return` (TK 521), `record_sale_einvoice`/`cancel_sale_einvoice`, `revenue_by_tax_group`; redefines `reverse_sales_invoice` (blocked by returns / active e-invoice), `post_stock_adjustments` (skips `sales_return` movements), `trg_doc_immutable`, `v_sales_invoice_open`, `v_revenue_events` (returns netted), `report_dashboard/monthly_pnl/top_products/top_customers` (revenue = 511 − 521) |
+
+Forward-only; safe on the (almost empty) production DB: adds tables/functions/columns and one seed row (`Khách lẻ`); no existing accounting row is touched (0013 adds columns with defaults, it does not UPDATE immutable ledgers/documents). Tests: `tests/db/cases/30_hkd_profile.sql`, `31_hkd_sales.sql`. Details and open decisions: `docs/hkd-compliance.md`.

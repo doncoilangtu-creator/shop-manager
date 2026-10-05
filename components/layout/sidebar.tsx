@@ -11,12 +11,14 @@ import {
   Wrench,
   BarChart3,
   Settings,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inventory", label: "Kho", icon: Package },
+  { href: "/sales", label: "Bán hàng", icon: ShoppingCart },
   { href: "/customers", label: "Khách hàng", icon: Users },
   { href: "/suppliers", label: "Đối tác", icon: Truck },
   { href: "/quotations", label: "Báo giá", icon: FileText },

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { commandArgs, esc, ilikeOr, parseArgs, parseMoney, parsePositiveInt, sanitizeSearchTerm } from "../src/lib/text";
 import { addDaysYmd, monthRange, vnDate } from "../src/lib/time";
 import { generateCode } from "../src/lib/codes";
+import { parseBanArgs } from "../src/commands/owner";
 
 describe("esc", () => {
   it("escapes Telegram HTML specials", () => {
@@ -65,5 +66,19 @@ describe("time helpers", () => {
     const c = generateCode("TK", new Date("2026-09-30T18:30:00Z"));
     expect(c).toMatch(/^TK-20261001-[0-9A-Z]{8}$/);
     expect(new Set(Array.from({ length: 500 }, () => generateCode("TK"))).size).toBe(500);
+  });
+});
+
+describe("parseBanArgs", () => {
+  it("even tokens = Khách lẻ; odd = customer first; trailing tm/ck", () => {
+    expect(parseBanArgs(["HP-1", "2"])).toEqual({ keyword: null, items: [{ sku: "HP-1", qty: 2 }], method: "cash" });
+    expect(parseBanArgs(["Lan", "HP-1", "2", "KB", "1", "CK"])).toEqual({ keyword: "Lan", items: [{ sku: "HP-1", qty: 2 }, { sku: "KB", qty: 1 }], method: "bank" });
+    expect(parseBanArgs(["lẻ", "HP-1", "2", "tm"])).toMatchObject({ keyword: null, method: "cash" });
+  });
+  it("rejects bad quantities and empty input", () => {
+    expect(parseBanArgs([])).toHaveProperty("error");
+    expect(parseBanArgs(["HP-1", "x"])).toHaveProperty("error");
+    expect(parseBanArgs(["HP-1", "1.5"])).toHaveProperty("error");
+    expect(parseBanArgs(Array.from({ length: 42 }, (_, i) => (i % 2 ? "1" : "S")))).toHaveProperty("error");
   });
 });

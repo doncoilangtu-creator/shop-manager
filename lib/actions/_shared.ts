@@ -94,3 +94,8 @@ export function formDataToObject(formData: FormData, multiKeys: string[] = []): 
   }
   return obj;
 }
+
+/** Narrow a PostgREST response with embedded relations to a hand-written row type (the untyped client infers arrays for to-one embeds). */
+export function typed<T>(res: { data: unknown; error: PgError }): { data: T | null; error: PgError } {
+  return res as unknown as { data: T | null; error: PgError };
+}
