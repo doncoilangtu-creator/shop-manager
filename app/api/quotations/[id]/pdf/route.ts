@@ -5,7 +5,7 @@ import { QuotationPdfDocument } from "@/lib/quotations/pdf-template";
 import { uploadQuotationPdf } from "@/lib/quotations/storage";
 import { saveQuotationPdfPathAction } from "@/lib/quotations/actions";
 import { signQuotationPdf } from "@/lib/quotations/storage";
-import { getShopInfo } from "@/lib/shop";
+import { loadShopInfo } from "@/lib/shop";
 import type { Quotation, QuotationItem } from "@/types/db";
 
 // @react-pdf/renderer must run on Node runtime (uses Buffer / stream).
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const React = await import("react");
 
   const doc = React.createElement(QuotationPdfDocument, {
-    shop: getShopInfo(),
+    shop: await loadShopInfo(supabase),
     quotation: {
       code: detail.code,
       createdAt: detail.created_at,

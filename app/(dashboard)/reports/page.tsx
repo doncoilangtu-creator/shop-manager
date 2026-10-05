@@ -27,7 +27,10 @@ export default async function ReportsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Báo cáo</h1>
           <p className="text-sm text-muted-foreground">Từ {range.p_from} đến {range.p_to} (giờ Việt Nam) · số liệu từ sổ cái</p>
         </div>
-        <Button asChild variant="outline"><Link href="/reports/accounting">Báo cáo kế toán →</Link></Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline"><Link href="/reports/revenue">Doanh thu năm & ngưỡng 1 tỷ →</Link></Button>
+          <Button asChild variant="outline"><Link href="/reports/accounting">Báo cáo kế toán →</Link></Button>
+        </div>
       </div>
 
       <Card>

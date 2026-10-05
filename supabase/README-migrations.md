@@ -53,3 +53,12 @@ Deploy note: the Telegram bot built BEFORE branch `refactor/c9-bot` writes `prod
 
 Tests: `tests/db/cases/25..28`. Full run: `bash tests/db/run.sh --strict`.
 Untested on real Supabase: the guarded storage-bucket statement in 0009, RLS through PostgREST, any role/grant difference between Supabase and the local compat layer. Apply to a staging project first.
+
+## 0011–0012 (security hardening, A1)
+
+| file | content |
+|---|---|
+| 0011_security_hardening.sql | revoke EXECUTE on trigger functions, pin `search_path` on 12 functions, `(select auth.uid())` in `app_users_self_read` |
+| 0012_hkd_profile_tax.sql | **A1 — hộ kinh doanh**: `business_profile` (1 row; CCCD readable by owner only), `business_locations`, `tax_groups`, `tax_rates`, `legal_thresholds` (effective-dated, threshold 1 tỷ is a row not code), RPCs `set_business_profile`, `get_business_profile`, `upsert_business_location`, `set_legal_threshold` (owner only), `revenue_ytd`, `revenue_by_month`, `threshold_status` (warning ≥ 80 %, exceeded ≥ 100 %), view `v_revenue_events` |
+
+Forward-only; safe on the (almost empty) production DB: adds tables/functions only, no existing row is touched. Tests: `tests/db/cases/30_hkd_profile.sql`. Details and open decisions: `docs/hkd-compliance.md`.
