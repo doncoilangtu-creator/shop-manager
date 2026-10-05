@@ -11,20 +11,22 @@ import { Label } from "@/components/ui/label";
 import { createSaleAction } from "@/lib/actions/sales";
 import { CHANNELS, CHANNEL_LABEL, METHOD_LABEL, PAYMENT_METHODS, computeSaleTotals, type Channel, type PaymentMethod } from "@/lib/sales/schema";
 import { formatVND } from "@/lib/utils";
+import { MoneyAccountSelect } from "@/components/money/account-select";
+import type { MoneyAccountOption } from "@/lib/money/schema";
 
 export type SaleProduct = { id: string; sku: string; name: string; sell_price: number; stock_qty: number; tax_group: string };
 export type SaleCustomer = { id: string; name: string; phone: string | null };
 export type TaxGroupOption = { code: string; name_vi: string };
 
 type Line = { uid: string; product_id: string; description: string; qty: string; unit_price: string; discount_pct: string; tax_group: string };
-type Pay = { uid: string; method: PaymentMethod; amount: string; note: string };
+type Pay = { uid: string; method: PaymentMethod; amount: string; note: string; accountId: string };
 
 const selectCls = "h-9 w-full rounded-md border bg-background px-2 text-sm";
 let seq = 0;
 const uid = () => `r${++seq}`;
 const blankLine = (): Line => ({ uid: uid(), product_id: "", description: "", qty: "1", unit_price: "0", discount_pct: "0", tax_group: "" });
 
-export function SaleForm({ products, customers, taxGroups, today }: { products: SaleProduct[]; customers: SaleCustomer[]; taxGroups: TaxGroupOption[]; today: string }) {
+export function SaleForm({ products, customers, taxGroups, today, accounts = [] }: { products: SaleProduct[]; customers: SaleCustomer[]; taxGroups: TaxGroupOption[]; today: string; accounts?: MoneyAccountOption[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [customerId, setCustomerId] = useState("");
@@ -48,7 +50,7 @@ export function SaleForm({ products, customers, taxGroups, today }: { products: 
   const walkin = customerId === "";
   const patchLine = (id: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.uid === id ? { ...l, ...p } : l)));
   const patchPay = (id: string, p: Partial<Pay>) => setPays((ps) => ps.map((x) => (x.uid === id ? { ...x, ...p } : x)));
-  const payRest = (method: PaymentMethod) => setPays((ps) => [...ps.filter((p) => Number(p.amount) > 0), { uid: uid(), method, amount: String(totals.debt || ""), note: "" }]);
+  const payRest = (method: PaymentMethod) => setPays((ps) => [...ps.filter((p) => Number(p.amount) > 0), { uid: uid(), method, amount: String(totals.debt || ""), note: "", accountId: "" }]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +70,7 @@ export function SaleForm({ products, customers, taxGroups, today }: { products: 
           discount_pct: Number(l.discount_pct) || 0,
           tax_group: l.tax_group || null,
         })),
-        payments: pays.filter((p) => Number(p.amount) > 0).map((p) => ({ method: p.method, amount: Number(p.amount), note: p.note })),
+        payments: pays.filter((p) => Number(p.amount) > 0).map((p) => ({ method: p.method, amount: Number(p.amount), note: p.note, money_account_id: p.accountId || null })),
         buyer: showBuyer ? buyer : null,
         einvoice: showEinv && einv.number.trim() ? einv : null,
       });
@@ -166,15 +168,17 @@ export function SaleForm({ products, customers, taxGroups, today }: { products: 
           {pays.length === 0 && <p className="text-sm text-muted-foreground">Chưa nhập khoản thu nào{walkin ? " — khách lẻ phải thanh toán đủ." : " — toàn bộ sẽ ghi công nợ."}</p>}
           {pays.map((p) => (
             <div key={p.uid} className="grid grid-cols-[130px_1fr_1fr_40px] gap-2">
-              <select className={selectCls} aria-label="Phương thức" value={p.method} onChange={(e) => patchPay(p.uid, { method: e.target.value as PaymentMethod })}>
+              <select className={selectCls} aria-label="Phương thức" value={p.method} onChange={(e) => patchPay(p.uid, { method: e.target.value as PaymentMethod, accountId: "" })}>
                 {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{METHOD_LABEL[m]}</option>)}
               </select>
               <Input type="number" min={1} step={1} aria-label="Số tiền" className="text-right" value={p.amount} onChange={(e) => patchPay(p.uid, { amount: e.target.value })} />
-              <Input aria-label="Ghi chú" placeholder="Ghi chú (vd: tài khoản nhận)" value={p.note} onChange={(e) => patchPay(p.uid, { note: e.target.value })} />
+              {accounts.length > 0
+                ? <MoneyAccountSelect accounts={accounts} method={p.method} value={p.accountId} onChange={(v) => patchPay(p.uid, { accountId: v })} />
+                : <Input aria-label="Ghi chú" placeholder="Ghi chú" value={p.note} onChange={(e) => patchPay(p.uid, { note: e.target.value })} />}
               <Button type="button" variant="ghost" size="icon" aria-label="Xóa khoản thu" onClick={() => setPays((ps) => ps.filter((x) => x.uid !== p.uid))}><Trash2 className="h-4 w-4" /></Button>
             </div>
           ))}
-          <Button type="button" variant="outline" size="sm" onClick={() => setPays((ps) => [...ps, { uid: uid(), method: "cash", amount: "", note: "" }])}><Plus className="mr-2 h-4 w-4" />Thêm khoản thu</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setPays((ps) => [...ps, { uid: uid(), method: "cash", amount: "", note: "", accountId: "" }])}><Plus className="mr-2 h-4 w-4" />Thêm khoản thu</Button>
           {totals.debt > 0 && !walkin && (
             <div className="space-y-2">
               <Label htmlFor="s-due">Hạn thanh toán công nợ</Label>

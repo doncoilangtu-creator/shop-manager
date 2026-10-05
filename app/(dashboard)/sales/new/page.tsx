@@ -2,6 +2,7 @@ import { SaleForm, type SaleCustomer, type SaleProduct, type TaxGroupOption } fr
 import { createClient } from "@/lib/supabase/server";
 import { unwrap } from "@/lib/actions/_shared";
 import { vnDate } from "@/lib/time";
+import { listActiveMoneyAccounts } from "@/lib/money/queries";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Bán hàng mới | Shop Manager" };
@@ -13,6 +14,7 @@ export default async function NewSalePage() {
     sb.from("customers").select("id, name, phone, is_walkin").eq("is_walkin", false).order("name").limit(1000),
     sb.from("tax_groups").select("code, name_vi").order("sort_order"),
   ]);
+  const accounts = await listActiveMoneyAccounts(sb);
   return (
     <div className="space-y-6 p-6">
       <div>
@@ -24,6 +26,7 @@ export default async function NewSalePage() {
         customers={unwrap<SaleCustomer[]>(customers, "customers")}
         taxGroups={unwrap<TaxGroupOption[]>(groups, "tax_groups")}
         today={vnDate()}
+        accounts={accounts}
       />
     </div>
   );

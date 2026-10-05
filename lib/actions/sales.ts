@@ -38,7 +38,7 @@ export async function createSaleAction(payload: unknown): Promise<ActionResult<S
       discount_pct: l.discount_pct,
       tax_group: l.tax_group ?? null,
     })),
-    p_payments: d.payments.map((p) => ({ method: p.method, amount: p.amount, note: p.note ?? null })),
+    p_payments: d.payments.map((p) => ({ method: p.method, amount: p.amount, note: p.note ?? null, money_account_id: p.money_account_id ?? null })),
     p_channel: d.channel,
     p_location_id: null,
     p_buyer: d.buyer && Object.values(d.buyer).some(Boolean) ? d.buyer : null,
@@ -97,9 +97,10 @@ export async function returnSaleAction(payload: unknown): Promise<ActionResult<{
     p_sale_id: d.sale_id,
     p_date: d.date ?? vnDate(),
     p_lines: d.lines.map((l: { sale_line_id: string; qty: number; amount?: number | null }) => ({ sale_line_id: l.sale_line_id, qty: l.qty, amount: l.amount ?? null })),
-    p_refunds: d.refunds && d.refunds.length ? d.refunds.map((p) => ({ method: p.method, amount: p.amount, note: p.note ?? null })) : null,
+    p_refunds: d.refunds && d.refunds.length ? d.refunds.map((p) => ({ method: p.method, amount: p.amount, note: p.note ?? null, money_account_id: p.money_account_id ?? null })) : null,
     p_reason: d.reason ?? null,
     p_refund_method: d.refund_method,
+    p_refund_account_id: d.refund_account_id ?? undefined,
   });
   if (error) return { ok: false, error: accountingErrorMessage(error.message) };
   const r = (data ?? {}) as Record<string, unknown>;

@@ -11,6 +11,7 @@ const paymentSchema = z.object({
   partner_id: z.string().uuid(),
   amount: z.coerce.number().positive("Số tiền phải > 0").max(1e13),
   method: z.enum(["cash", "bank"]),
+  money_account_id: z.preprocess((v) => (v === "" ? null : v), z.string().uuid("Tài khoản không hợp lệ").nullable().optional()),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ngày không hợp lệ").optional().nullable(),
   memo: z.string().max(500).optional().nullable(),
 });
@@ -29,6 +30,7 @@ async function pay(rpcName: "post_receipt_fifo" | "post_disbursement_fifo", part
     p_method: d.method,
     p_date: d.date ?? vnDate(),
     p_memo: d.memo ?? undefined,
+    p_money_account_id: d.money_account_id ?? undefined,
   });
   if (error) return { ok: false, error: accountingErrorMessage(error.message) };
   const r = (data ?? {}) as { payment_no?: string; allocated?: number; unapplied?: number };

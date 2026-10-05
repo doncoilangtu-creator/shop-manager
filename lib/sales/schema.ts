@@ -35,6 +35,7 @@ export const salePaymentSchema = z.object({
   method: z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: "Phương thức thanh toán không hợp lệ" }) }),
   amount: money("Số tiền").positive("Số tiền thanh toán phải > 0").max(1e13),
   note: text(200),
+  money_account_id: z.preprocess((v) => (v === "" ? null : v), z.string().uuid("Tài khoản tiền không hợp lệ").nullable().optional()),
 });
 
 export const einvoiceSchema = z.object({
@@ -109,5 +110,6 @@ export const returnInputSchema = z.object({
     .pipe(z.array(z.any()).min(1, "Chọn ít nhất một dòng cần trả/giảm giá")),
   refunds: z.array(salePaymentSchema).max(10).optional().nullable(),
   refund_method: z.enum(PAYMENT_METHODS).default("cash"),
+  refund_account_id: z.preprocess((v) => (v === "" ? null : v), z.string().uuid("Tài khoản hoàn tiền không hợp lệ").nullable().optional()),
 });
 export type ReturnInput = z.infer<typeof returnInputSchema>;

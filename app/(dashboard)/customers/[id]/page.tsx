@@ -27,6 +27,7 @@ import { formatVND, formatDate } from "@/lib/utils";
 import { CustomerForm } from "../customer-form";
 import { OpenItemsCard } from "../../open-items-card";
 import { unwrap } from "@/lib/actions/_shared";
+import { listActiveMoneyAccounts } from "@/lib/money/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -211,6 +212,7 @@ export default async function CustomerDetailPage(props: PageProps) {
       </Card>
 
       <OpenItemsCard
+        accounts={await listActiveMoneyAccounts(supabase)}
         kind="receipt"
         partnerId={customer.id}
         balance={Number(ar?.balance ?? 0)}
