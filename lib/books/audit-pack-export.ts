@@ -63,6 +63,19 @@ const dayBefore = (iso: string) => {
   return d.toISOString().slice(0, 10);
 };
 
+const PAGE = 1000;
+/** PostgREST trả tối đa ~1000 dòng/lần: đọc theo trang cho tới khi hết. */
+async function fetchAll<T>(make: () => { range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }> }, label: string): Promise<T[]> {
+  const out: T[] = [];
+  for (let off = 0; ; off += PAGE) {
+    const { data, error } = await make().range(off, off + PAGE - 1);
+    if (error) throw new Error(`${label}: ${error.message}`);
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
 function pickEinvoice(list: SaleJoin["einvoices"]): { no: string | null; serial: string | null; status: EinvoiceStatus | string } {
   const rows = list ?? [];
   const issued = rows.find((e) => (e.kind === "original" || e.kind === "replace") && e.status === "issued");
@@ -75,16 +88,19 @@ function pickEinvoice(list: SaleJoin["einvoices"]): { no: string | null; serial:
 }
 
 async function loadSales(sb: SupabaseClient, from: string, to: string): Promise<AuditSaleRow[]> {
-  const { data, error } = await sb
-    .from("sales_invoices")
-    .select("id, invoice_no, invoice_date, total, customers(name), einvoices(number, symbol, status, kind)")
-    .is("voided_at", null)
-    .gte("invoice_date", from)
-    .lte("invoice_date", to)
-    .order("invoice_date")
-    .order("invoice_no");
-  if (error) throw new Error("sales_invoices: " + error.message);
-  return ((data ?? []) as unknown as SaleJoin[]).map((r) => {
+  const data = await fetchAll<SaleJoin>(
+    () =>
+      sb
+        .from("sales_invoices")
+        .select("id, invoice_no, invoice_date, total, customers(name), einvoices(number, symbol, status, kind)")
+        .is("voided_at", null)
+        .gte("invoice_date", from)
+        .lte("invoice_date", to)
+        .order("invoice_date")
+        .order("invoice_no"),
+    "sales_invoices",
+  );
+  return data.map((r) => {
     const e = pickEinvoice(r.einvoices);
     return {
       date: r.invoice_date,
@@ -99,21 +115,23 @@ async function loadSales(sb: SupabaseClient, from: string, to: string): Promise<
 }
 
 async function loadPurchases(sb: SupabaseClient, from: string, to: string): Promise<AuditPurchaseRow[]> {
-  const [billsRes, openRes] = await Promise.all([
-    sb
-      .from("purchase_bills")
-      .select("bill_no, bill_date, supplier_ref, total, suppliers(name)")
-      .is("voided_at", null)
-      .gte("bill_date", from)
-      .lte("bill_date", to)
-      .order("bill_date")
-      .order("bill_no"),
-    sb.from("v_purchase_bill_open").select("bill_no, allocated, outstanding"),
+  const [bills, open] = await Promise.all([
+    fetchAll<BillJoin>(
+      () =>
+        sb
+          .from("purchase_bills")
+          .select("bill_no, bill_date, supplier_ref, total, suppliers(name)")
+          .is("voided_at", null)
+          .gte("bill_date", from)
+          .lte("bill_date", to)
+          .order("bill_date")
+          .order("bill_no"),
+      "purchase_bills",
+    ),
+    fetchAll<OpenBill>(() => sb.from("v_purchase_bill_open").select("bill_no, allocated, outstanding").gte("bill_date", from).lte("bill_date", to).order("bill_no"), "v_purchase_bill_open"),
   ]);
-  if (billsRes.error) throw new Error("purchase_bills: " + billsRes.error.message);
-  if (openRes.error) throw new Error("v_purchase_bill_open: " + openRes.error.message);
-  const paidByNo = new Map(((openRes.data ?? []) as OpenBill[]).map((o) => [o.bill_no, r2(o.allocated)]));
-  return ((billsRes.data ?? []) as unknown as BillJoin[]).map((r) => ({
+  const paidByNo = new Map(open.map((o) => [o.bill_no, r2(o.allocated)]));
+  return bills.map((r) => ({
     date: r.bill_date,
     docNo: r.bill_no,
     supplier: r.suppliers?.name ?? "",

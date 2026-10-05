@@ -11,7 +11,7 @@ function fakeSb(tables: Record<string, unknown[]>, rpcs: (name: string, args: Re
     const rec = { table, ops: [] as Array<[string, unknown[]]> };
     calls.push(rec);
     const b: Record<string, unknown> = {};
-    for (const m of ["select", "is", "gte", "lte", "order", "eq", "limit"]) b[m] = (...a: unknown[]) => { rec.ops.push([m, a]); return b; };
+    for (const m of ["select", "is", "gte", "lte", "order", "eq", "limit", "range"]) b[m] = (...a: unknown[]) => { rec.ops.push([m, a]); return b; };
     b.then = (ok: (r: Res) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(ok);
     return b;
   };
@@ -73,8 +73,26 @@ describe("loadAuditPackInput", () => {
     expect(sales.ops).toContainEqual(["is", ["voided_at", null]]);
     expect(sales.ops).toContainEqual(["gte", ["invoice_date", "2026-01-01"]]);
     expect(sales.ops).toContainEqual(["lte", ["invoice_date", "2026-06-30"]]);
+    expect(sales.ops).toContainEqual(["range", [0, 999]]);
     expect(rpcCalls).toContainEqual(["book_s1a_check", { p_from: "2026-01-01", p_to: "2026-06-30" }]);
     expect(rpcCalls).toContainEqual(["money_balances", { p_as_of: "2025-12-31" }]);
+  });
+
+  it("pages through >1000 sales rows", async () => {
+    const many = Array.from({ length: 1500 }, (_, i) => ({ id: `s${i}`, invoice_no: `HD${i}`, invoice_date: "2026-01-02", total: 1, customers: null, einvoices: [] }));
+    const { sb, calls } = fakeSb({ ...tables, sales_invoices: many }, rpcs(true));
+    // fake trả cả 1500 dòng mỗi lần ⇒ lần 1 đủ trang (1000+) ⇒ đọc tiếp; giả lập trang theo range
+    const from = (sb as unknown as { from: (t: string) => Record<string, (...a: unknown[]) => unknown> }).from;
+    (sb as unknown as { from: unknown }).from = (t: string) => {
+      const b = from(t);
+      if (t !== "sales_invoices") return b;
+      const origRange = b.range;
+      b.range = (a: unknown, z: unknown) => { origRange(a, z); return { then: (ok: (r: Res) => unknown) => Promise.resolve({ data: many.slice(a as number, (z as number) + 1), error: null }).then(ok) }; };
+      return b;
+    };
+    const input = await loadAuditPackInput(sb, { year: 2026, kind: "h1" });
+    expect(input.sales).toHaveLength(1500);
+    expect(calls.filter((c) => c.table === "sales_invoices").flatMap((c) => c.ops.filter((o) => o[0] === "range").map((o) => o[1]))).toEqual([[0, 999], [1000, 1999]]);
   });
 
   it("rpc error surfaces with the rpc name", async () => {
