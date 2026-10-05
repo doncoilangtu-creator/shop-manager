@@ -43,11 +43,48 @@ const MESSAGES: Array<[string, string]> = [
   ["threshold_key_invalid", "Tên ngưỡng không hợp lệ."],
   ["threshold_value_invalid", "Giá trị ngưỡng không hợp lệ."],
   ["source_required", "Cần ghi căn cứ pháp lý."],
+  ["walkin_must_pay_in_full", "Khách lẻ phải thanh toán đủ. Chọn khách hàng có tên nếu muốn ghi công nợ."],
+  ["walkin_customer_protected", "Không thể sửa/xóa khách lẻ của hệ thống."],
+  ["payment_exceeds_total", "Số tiền thu lớn hơn tổng tiền đơn hàng."],
+  ["vat_not_allowed_hkd", "Hộ kinh doanh không tách VAT: nhập đơn giá đã gồm thuế, không nhập thuế suất."],
+  ["line_invalid", "Dòng hàng không hợp lệ (số lượng, đơn giá hoặc chiết khấu)."],
+  ["channel_invalid", "Kênh bán không hợp lệ."],
+  ["due_before_invoice_date", "Hạn thanh toán không được trước ngày bán."],
+  ["payments_invalid", "Danh sách thanh toán không hợp lệ."],
+  ["date_required", "Cần nhập ngày."],
+  ["invoice_not_found", "Không tìm thấy đơn bán."],
+  ["invoice_voided", "Đơn bán đã bị hủy."],
+  ["invoice_has_returns", "Đơn đã có phiếu trả hàng. Hãy hủy phiếu trả hàng trước."],
+  ["invoice_has_einvoice", "Đơn đã có hóa đơn điện tử còn hiệu lực. Hãy hủy/điều chỉnh hóa đơn ở hệ thống hóa đơn rồi đánh dấu hủy tại đây trước."],
+  ["return_unsupported_vat_invoice", "Đơn lập theo cách cũ có tách VAT: chưa hỗ trợ trả hàng tự động. Hãy hủy đơn hoặc nhờ kế toán xử lý."],
+  ["return_exceeds_sold", "Số lượng trả vượt số đã bán (trừ các lần trả trước)."],
+  ["return_amount_exceeds_line", "Số tiền trả/giảm vượt số tiền còn lại của dòng hàng."],
+  ["return_amount_required", "Giảm giá không trả hàng cần nhập số tiền."],
+  ["return_amount_invalid", "Số tiền trả/giảm không hợp lệ."],
+  ["return_qty_invalid", "Số lượng trả không hợp lệ (dòng dịch vụ không có hàng để nhập lại kho)."],
+  ["return_before_sale", "Ngày trả hàng không được trước ngày bán."],
+  ["return_not_found", "Không tìm thấy phiếu trả hàng."],
+  ["sale_line_not_found", "Dòng hàng không thuộc đơn này."],
+  ["refund_mismatch", "Tổng tiền hoàn lại phải bằng số tiền trả hàng trừ phần trừ vào công nợ."],
+  ["refunds_invalid", "Danh sách hoàn tiền không hợp lệ."],
+  ["einvoice_already_recorded", "Đơn này đã có hóa đơn điện tử còn hiệu lực. Dùng 'thay thế' hoặc hủy bản cũ trước."],
+  ["einvoice_number_duplicate", "Số hóa đơn điện tử (cùng ký hiệu) đã được ghi cho đơn khác."],
+  ["einvoice_number_required", "Nhập số hóa đơn điện tử."],
+  ["einvoice_number_invalid", "Số hóa đơn điện tử không hợp lệ."],
+  ["einvoice_symbol_invalid", "Ký hiệu hóa đơn không hợp lệ."],
+  ["einvoice_url_invalid", "Đường dẫn tra cứu phải bắt đầu bằng http:// hoặc https://."],
+  ["einvoice_nothing_to_replace", "Chưa có hóa đơn điện tử để thay thế."],
+  ["einvoice_not_active", "Hóa đơn điện tử này không còn hiệu lực."],
+  ["einvoice_not_found", "Không tìm thấy hóa đơn điện tử."],
+  ["einvoice_kind_invalid", "Loại hóa đơn điện tử không hợp lệ."],
+  ["einvoice_invalid", "Thông tin hóa đơn điện tử không hợp lệ."],
   ["forbidden", "Bạn không có quyền thực hiện thao tác này."],
 ];
 
 export function accountingErrorMessage(raw: string | null | undefined): string {
   const msg = raw ?? "";
+  const stock = /insufficient_stock: (\S+) \(have (\d+), need (\d+)\)/.exec(msg);
+  if (stock) return `Tồn kho không đủ: ${stock[1]} (còn ${stock[2]}, cần ${stock[3]}).`;
   for (const [code, text] of MESSAGES) if (msg.includes(code)) return text;
   if (/permission denied/i.test(msg)) return "Bạn không có quyền thực hiện thao tác này.";
   return msg || "Có lỗi xảy ra";

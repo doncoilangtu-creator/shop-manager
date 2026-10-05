@@ -55,6 +55,13 @@ export const parseRevenueByMonth = (raw: unknown): MonthRevenue[] =>
     return { month: String(o.month), revenue: num(o.revenue), cumulative: num(o.cumulative) };
   });
 
+export type TaxGroupRevenue = { tax_group: string; name_vi: string; revenue: number; vat_pct: number | null; pit_pct: number | null };
+export const parseRevenueByTaxGroup = (raw: unknown): TaxGroupRevenue[] =>
+  (Array.isArray(raw) ? raw : []).map((r) => {
+    const o = r as Record<string, unknown>;
+    return { tax_group: String(o.tax_group), name_vi: String(o.name_vi ?? o.tax_group), revenue: num(o.revenue), vat_pct: numOrNull(o.vat_pct), pit_pct: numOrNull(o.pit_pct) };
+  });
+
 /** Vietnamese banner copy for a status, or null when nothing needs to be shown. */
 export function thresholdBanner(s: ThresholdStatus): { tone: "warning" | "danger"; title: string; body: string } | null {
   if (s.level !== "warning" && s.level !== "exceeded") return null;

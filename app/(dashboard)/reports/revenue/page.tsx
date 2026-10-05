@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ThresholdProgress } from "@/components/threshold-progress";
 import { createClient } from "@/lib/supabase/server";
 import { rpcOrThrow } from "@/lib/reports";
-import { parseRevenueByMonth, parseThresholdStatus, thresholdBanner } from "@/lib/hkd/threshold";
+import { parseRevenueByMonth, parseRevenueByTaxGroup, parseThresholdStatus, thresholdBanner } from "@/lib/hkd/threshold";
 import { vnParts } from "@/lib/time";
 import { formatVND } from "@/lib/utils";
 
@@ -17,9 +17,10 @@ export default async function RevenueThresholdPage({ searchParams }: { searchPar
   const y = Number(sp.year);
   const year = Number.isInteger(y) && y >= 2000 && y <= 2100 ? y : thisYear;
   const sb = await createClient();
-  const [status, months] = await Promise.all([
+  const [status, months, groups] = await Promise.all([
     rpcOrThrow(sb, "threshold_status", { p_year: year }, parseThresholdStatus),
     rpcOrThrow(sb, "revenue_by_month", { p_year: year }, parseRevenueByMonth),
+    rpcOrThrow(sb, "revenue_by_tax_group", { p_year: year }, parseRevenueByTaxGroup),
   ]);
   const banner = thresholdBanner(status);
   const max = Math.max(...months.map((m) => m.revenue), 1);
@@ -30,7 +31,7 @@ export default async function RevenueThresholdPage({ searchParams }: { searchPar
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Doanh thu năm {year} & ngưỡng miễn thuế</h1>
           <p className="text-sm text-muted-foreground">
-            Doanh thu tính thuế = tổng tiền ghi trên hóa đơn bán hàng (đã gồm thuế), không tính hóa đơn đã hủy. Tính trên mọi địa điểm và kênh bán.
+            Doanh thu tính thuế = tổng tiền ghi trên hóa đơn bán hàng (đã gồm thuế), trừ hàng bán trả lại/giảm giá, không tính hóa đơn đã hủy. Tính trên mọi địa điểm và kênh bán.
           </p>
         </div>
         <div className="flex gap-2">
@@ -73,6 +74,21 @@ export default async function RevenueThresholdPage({ searchParams }: { searchPar
                 <span className="w-40 text-right text-xs text-muted-foreground">Lũy kế {formatVND(m.cumulative)}</span>
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Doanh thu theo nhóm ngành</CardTitle><CardDescription>Nhóm ngành lấy theo từng dòng hàng khi bán (đã trừ hàng trả lại). Tỷ lệ là tỷ lệ % theo bảng thuế đang áp dụng, để tham khảo khi kê khai.</CardDescription></CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm">
+            {groups.map((g) => (
+              <div key={g.tax_group} className="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
+                <span>{g.name_vi}</span>
+                <span className="text-xs text-muted-foreground">GTGT {g.vat_pct ?? "—"}% · TNCN {g.pit_pct ?? "—"}%</span>
+                <span className="w-40 text-right font-medium">{formatVND(g.revenue)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between pt-1 font-semibold"><span>Tổng</span><span>{formatVND(groups.reduce((a, g) => a + g.revenue, 0))}</span></div>
           </div>
         </CardContent>
       </Card>

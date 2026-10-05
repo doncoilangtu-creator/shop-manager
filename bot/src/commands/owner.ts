@@ -7,8 +7,31 @@ import { dbErrorMessage } from "../lib/errors";
 
 const DENIED = "⛔ Lệnh chỉ dành cho chủ shop.";
 const HTML = { parse_mode: "HTML" as const };
-/** Bán nhanh thu ngay: tiền mặt = TK 111 (public._method_account('cash')); schema chỉ có 'cash' | 'bank'. */
-const PAY_METHOD = "cash";
+const BAN_USAGE = 'Cú pháp: /ban [khách/SĐT] &lt;SKU&gt; &lt;SL&gt; [&lt;SKU&gt; &lt;SL&gt; ...] [tm|ck]\nVD: /ban HP-1234 2 (khách lẻ, tiền mặt)\nVD: /ban "Nguyen Van A" HP-1234 2 KB-1 1 ck';
+const WALKIN_WORDS = new Set(["le", "lẻ", "khachle", "khách lẻ", "khach le"]);
+const MAX_BAN_LINES = 20;
+
+/** /ban arguments: optional customer keyword (odd token count), SKU/qty pairs, optional trailing payment method. Exported for tests. */
+export function parseBanArgs(tokens: string[]): { keyword: string | null; items: Array<{ sku: string; qty: number }>; method: "cash" | "bank" } | { error: string } {
+  const t = [...tokens];
+  let method: "cash" | "bank" = "cash";
+  const last = (t[t.length - 1] ?? "").toLowerCase();
+  if (["tm", "cash"].includes(last)) { t.pop(); } else if (["ck", "bank"].includes(last)) { method = "bank"; t.pop(); }
+  if (t.length < 2) return { error: BAN_USAGE };
+  let keyword: string | null = null;
+  if (t.length % 2 === 1) {
+    const k = t.shift() as string;
+    keyword = WALKIN_WORDS.has(k.toLowerCase()) ? null : k;
+  }
+  const items: Array<{ sku: string; qty: number }> = [];
+  for (let i = 0; i < t.length; i += 2) {
+    const qty = parsePositiveInt(t[i + 1]);
+    if (qty === null) return { error: `Số lượng của <code>${esc(t[i])}</code> phải là số nguyên &gt; 0.\n${BAN_USAGE}` };
+    items.push({ sku: t[i], qty });
+  }
+  if (items.length > MAX_BAN_LINES) return { error: `Tối đa ${MAX_BAN_LINES} dòng hàng mỗi đơn.` };
+  return { keyword, items, method };
+}
 
 type ProductRow = { id: string; sku: string; name: string; sell_price: number; stock_qty: number; min_stock: number };
 type CustomerRow = { id: string; name: string; phone: string | null; type?: string };
@@ -57,73 +80,66 @@ export function registerOwnerCommands(bot: Bot) {
     await ctx.reply(`✅ Đã nhập <b>${qty}</b> ${esc(prod.name)} (${esc(sku)})\nTồn mới: <b>${Number.isFinite(newQty) ? newQty : "?"}</b>`, HTML);
   });
 
-  // /ban <khách/SĐT> <SKU> <SL> — bán nhanh, THU TIỀN NGAY (hộ kinh doanh, giá bán đã gồm VAT):
-  //   1) post_sales_invoice: vat_rate = 0 và unit_price = sell_price => tổng hóa đơn = giá bán x SL, thuế không tách riêng
-  //      (giá niêm yết được coi là ĐÃ GỒM VAT; hộ kinh doanh không kê khai/khấu trừ VAT riêng). Hạn thanh toán = ngày bán
-  //      (không còn hạn 7 ngày) và p_allow_over_limit = true vì hóa đơn được thu đủ ngay sau đó (không làm tăng công nợ).
-  //   2) post_receipt: phiếu thu TIỀN MẶT (TK 111, mặc định) đúng bằng tổng hóa đơn, phân bổ thẳng vào hóa đơn này (KHÔNG dùng
-  //      post_receipt_fifo vì FIFO sẽ trả nợ cũ của khách trước) => công nợ 131 của lần bán này = 0.
-  //   Hai RPC là hai giao dịch riêng: nếu thu tiền lỗi thì bot đảo hóa đơn vừa ghi (reverse_sales_invoice) để không để lại công nợ treo.
+  // /ban [khách/SĐT] <SKU> <SL> [<SKU> <SL> ...] [tm|ck] — bán nhanh, THU TIỀN NGAY, MỘT lệnh gọi RPC nguyên tử post_sale_hkd:
+  //   * hộ kinh doanh: giá bán (sell_price) đã gồm thuế, không tách VAT, doanh thu = tổng tiền (TK 511), không có TK 3331.
+  //   * bỏ khách = "Khách lẻ" (không lấy thông tin, phải thanh toán đủ — luôn đúng vì /ban thu đủ ngay).
+  //   * tm (mặc định) = tiền mặt TK 111; ck = chuyển khoản TK 112. Đơn nhiều dòng: lặp lại cặp <SKU> <SL>.
+  //   * nguyên tử: kho + thu tiền + sổ cái trong MỘT giao dịch DB; lỗi thì không để lại dấu vết (không còn cơ chế tự đảo hóa đơn).
   bot.command("ban", async (ctx: Context) => {
     const u = await authenticateOwner(ctx);
     if (!u) return ctx.reply(DENIED);
-    const parts = parseArgs(commandArgs(ctx.message?.text, "ban"));
-    if (parts.length !== 3) return ctx.reply('Cú pháp: /ban <khách/SĐT> <SKU> <SL>\nVD: /ban "Nguyen Van A" HP-1234 2');
-    const [keyword, sku, qtyRaw] = parts;
-    const qty = parsePositiveInt(qtyRaw);
-    if (qty === null) return ctx.reply("Số lượng phải là số nguyên > 0.");
-    const filter = ilikeOr(["name", "phone"], keyword);
-    if (!filter) return ctx.reply("Từ khóa khách không hợp lệ.");
+    const parsed = parseBanArgs(parseArgs(commandArgs(ctx.message?.text, "ban")));
+    if ("error" in parsed) return ctx.reply(parsed.error, HTML);
+    const { keyword, items, method } = parsed;
 
     const sb = getSupabase();
-    const { data: custs, error: ce } = await sb.from("customers").select("id, name, phone").or(filter).limit(3);
-    if (ce) return ctx.reply(dbErrorMessage(ce.message));
-    const list = (custs ?? []) as CustomerRow[];
-    if (list.length === 0) return ctx.reply(`Không tìm thấy khách: <code>${esc(keyword)}</code>`, HTML);
-    const exact = list.filter((c) => c.phone === keyword || c.name.toLowerCase() === keyword.toLowerCase());
-    const cust = exact.length === 1 ? exact[0] : list.length === 1 ? list[0] : null;
-    if (!cust) {
-      return ctx.reply("Có nhiều khách phù hợp, hãy nhập rõ hơn (SĐT hoặc tên đầy đủ):\n" + list.map((c) => `• ${esc(c.name)} — ${esc(c.phone ?? "—")}`).join("\n"), HTML);
+    let cust: CustomerRow | null = null;
+    if (keyword !== null) {
+      const filter = ilikeOr(["name", "phone"], keyword);
+      if (!filter) return ctx.reply("Từ khóa khách không hợp lệ.");
+      const { data: custs, error: ce } = await sb.from("customers").select("id, name, phone").eq("is_walkin", false).or(filter).limit(3);
+      if (ce) return ctx.reply(dbErrorMessage(ce.message));
+      const list = (custs ?? []) as CustomerRow[];
+      if (list.length === 0) return ctx.reply(`Không tìm thấy khách: <code>${esc(keyword)}</code>. Bỏ trống tên khách để bán cho Khách lẻ.`, HTML);
+      const exact = list.filter((c) => c.phone === keyword || c.name.toLowerCase() === keyword.toLowerCase());
+      cust = exact.length === 1 ? exact[0] : list.length === 1 ? list[0] : null;
+      if (!cust) {
+        return ctx.reply("Có nhiều khách phù hợp, hãy nhập rõ hơn (SĐT hoặc tên đầy đủ):\n" + list.map((c) => `• ${esc(c.name)} — ${esc(c.phone ?? "—")}`).join("\n"), HTML);
+      }
     }
 
-    const { data: prod, error: pe } = await sb.from("products").select("id, name, sell_price, stock_qty").eq("sku", sku).maybeSingle();
+    const skus = [...new Set(items.map((i) => i.sku))];
+    const { data: prods, error: pe } = await sb.from("products").select("id, sku, name, sell_price, stock_qty").in("sku", skus);
     if (pe) return ctx.reply(dbErrorMessage(pe.message));
-    if (!prod) return ctx.reply(`Không tìm thấy SP: <code>${esc(sku)}</code>`, HTML);
-    const p = prod as ProductRow;
+    const bySku = new Map(((prods ?? []) as ProductRow[]).map((p) => [p.sku, p]));
+    for (const it of items) if (!bySku.has(it.sku)) return ctx.reply(`Không tìm thấy SP: <code>${esc(it.sku)}</code>`, HTML);
+    const need = new Map<string, number>();
+    for (const it of items) need.set(it.sku, (need.get(it.sku) ?? 0) + it.qty);
+    for (const [sku, qty] of need) {
+      const p = bySku.get(sku)!;
+      if (p.stock_qty < qty) return ctx.reply(`Tồn không đủ cho ${esc(p.name)} (còn ${p.stock_qty}, cần ${qty}).`, HTML);
+    }
 
-    const today = vnDate();
+    const lines = items.map((it) => ({ product_id: bySku.get(it.sku)!.id, qty: it.qty, unit_price: Number(bySku.get(it.sku)!.sell_price) }));
+    const total = Math.round(lines.reduce((a, l) => a + l.qty * l.unit_price, 0) * 100) / 100;
+    if (!(total > 0)) return ctx.reply("Tổng tiền phải lớn hơn 0 (kiểm tra giá bán của sản phẩm).");
+
     const memo = `Bán qua Telegram bot (${u.name ?? u.id})`;
-    const { data, error } = await sb.rpc("post_sales_invoice", {
-      p_customer_id: cust.id, p_invoice_date: today, p_due_date: today,
-      p_lines: [{ product_id: p.id, qty, unit_price: p.sell_price, vat_rate: 0 }], // giá đã gồm VAT, VAT 0%
-      p_memo: memo, p_quotation_id: null, p_allow_over_limit: true, // thu đủ ngay => không tạo công nợ mới
+    const { data, error } = await sb.rpc("post_sale_hkd", {
+      p_customer_id: cust?.id ?? null, p_date: vnDate(), p_lines: lines, // giá đã gồm thuế, không có trường VAT
+      p_payments: [{ method, amount: total, note: "Thu ngay qua bot" }], // thu đủ ngay => không tạo công nợ
+      p_channel: "store", p_location_id: null, p_buyer: null, p_memo: memo, p_due_date: null, p_einvoice: null, p_allow_over_limit: false,
     });
     if (error) {
-      if (error.message.includes("insufficient_stock")) return ctx.reply(`Tồn không đủ (còn ${p.stock_qty}).`);
+      if (error.message.includes("insufficient_stock")) return ctx.reply("Tồn không đủ, hãy kiểm tra lại kho trên web.");
       return ctx.reply(dbErrorMessage(error.message));
     }
     const r = (data ?? {}) as { invoice_id?: string; invoice_no?: string; total?: number };
-    const total = Number(r.total ?? p.sell_price * qty);
-    if (!r.invoice_id) return ctx.reply("Không nhận được mã hóa đơn từ hệ thống, hãy kiểm tra trên web trước khi bán lại.");
-
-    // Thu tiền mặt đúng bằng tổng hóa đơn, phân bổ vào chính hóa đơn này.
-    const { data: rc, error: re } = await sb.rpc("post_receipt", {
-      p_customer_id: cust.id, p_amount: total, p_method: PAY_METHOD, p_date: today,
-      p_allocations: [{ invoice_id: r.invoice_id, amount: total }], p_memo: `Thu tiền ngay ${r.invoice_no ?? ""} — ${memo}`,
-    });
-    if (re) {
-      console.error("[/ban] post_receipt failed:", re.message);
-      const { error: ve } = await sb.rpc("reverse_sales_invoice", { p_invoice_id: r.invoice_id, p_date: today, p_reason: "Bot: thu tiền ngay thất bại, tự động đảo hóa đơn" });
-      return ctx.reply(
-        ve
-          ? `⚠️ Đã ghi hóa đơn <b>${esc(r.invoice_no)}</b> nhưng KHÔNG thu được tiền và cũng không tự đảo được. Hãy xử lý trên web (công nợ đang mở ${fmtVND(total)}).`
-          : `❌ Không ghi được phiếu thu nên đã tự đảo hóa đơn <b>${esc(r.invoice_no)}</b> (kho và sổ được hoàn lại). Thử lại sau.`,
-        HTML,
-      );
-    }
-    const pay = (rc ?? {}) as { payment_no?: string };
+    if (!r.invoice_id) return ctx.reply("Không nhận được mã đơn từ hệ thống, hãy kiểm tra trên web trước khi bán lại.");
+    const detail = items.map((it) => `${esc(bySku.get(it.sku)!.name)} × ${it.qty}`).join("\n");
     await ctx.reply(
-      `✅ Hóa đơn <b>${esc(r.invoice_no)}</b> — đã thu đủ tiền mặt (TK 111)\nPhiếu thu: ${esc(pay.payment_no ?? "—")}\nKhách: ${esc(cust.name)}\nSP: ${esc(p.name)} × ${qty}\nTổng: ${fmtVND(total)} (giá đã gồm VAT, VAT 0%)\nCông nợ lần bán này: 0`,
+      `✅ Đơn <b>${esc(r.invoice_no)}</b> — đã thu đủ ${method === "bank" ? "chuyển khoản (TK 112)" : "tiền mặt (TK 111)"}\nKhách: ${esc(cust?.name ?? "Khách lẻ")}\n${detail}\nTổng: <b>${fmtVND(Number(r.total ?? total))}</b> (giá đã gồm thuế, không tách VAT)\nCông nợ lần bán này: 0\n` +
+        `Hóa đơn điện tử: chưa nhập số — vào web ${appLink(`/sales/${r.invoice_id}`)} để ghi số/mã tra cứu.`,
       HTML,
     );
   });
