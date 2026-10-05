@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   PackagePlus,
   Landmark,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const nav = [
   { href: "/suppliers", label: "Đối tác", icon: Truck },
   { href: "/quotations", label: "Báo giá", icon: FileText },
   { href: "/maintenance", label: "Bảo trì", icon: Wrench },
+  { href: "/books", label: "Sổ sách", icon: BookOpen },
   { href: "/reports", label: "Báo cáo", icon: BarChart3 },
   { href: "/settings", label: "Cài đặt", icon: Settings },
 ];

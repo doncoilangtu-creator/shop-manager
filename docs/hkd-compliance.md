@@ -119,3 +119,28 @@ Forward-only, không UPDATE dữ liệu cũ. Production hiện gần như trốn
 5. **Chuyển tiền nội bộ cho nhân viên**; không bắt buộc đủ số dư (cảnh báo số dư âm ở trang Tiền & Quỹ).
 6. **Cờ “đã thông báo thuế” chỉ mang tính nhắc việc** — không khẳng định pháp lý; chủ/kế toán tự xác nhận với cơ quan thuế.
 7. **Chưa làm** (mục P1 của kế hoạch): kiểm kê quỹ tiền mặt, chủ hộ rút vốn, xuất mẫu 01/BK-STK.
+
+## A5 — Sổ S1a-HKD (migration `0016_book_s1a.sql`)
+
+### Căn cứ & bố cục
+Thông tư 152/2025/TT-BTC Điều 4 (HKD không chịu GTGT, không nộp TNCN): **Sổ doanh thu bán hàng hóa, dịch vụ — Mẫu số S1a-HKD**. File xuất (Excel và PDF) giữ đúng mẫu đăng Công báo số 51 ngày 23/01/2026: góc trái “HỘ, CÁ NHÂN KINH DOANH / Địa chỉ / Mã số thuế”; góc phải “Mẫu số S1a-HKD (Kèm theo Thông tư số 152/2025/TT-BTC ngày 31 tháng 12 năm 2025 của Bộ trưởng Bộ Tài chính)”; tên sổ; Địa điểm kinh doanh; Kỳ kê khai; Đơn vị tính; bảng 3 cột **A Ngày tháng · B Diễn giải · 1 Số tiền**; dòng **Tổng cộng**; “Ngày … tháng … năm …” (ngày lập) và khối ký **NGƯỜI ĐẠI DIỆN HỘ KINH DOANH/CÁ NHÂN KINH DOANH (Ký, ghi rõ họ tên, đóng dấu (nếu có))** kèm tên người ký (hồ sơ: người ghi sổ, nếu trống thì chủ hộ). File Excel có thêm sheet “Theo nhóm ngành” (bảng bổ sung theo Đ3.3, không thay sổ). PDF dùng font Liberation Serif (SIL OFL, `assets/fonts`) để hiện đủ dấu tiếng Việt.
+
+### Cách sinh số liệu (một nguồn dữ liệu — ADR D1)
+- `book_s1a(từ, đến, địa điểm, chế độ)` đọc trực tiếp đơn bán, phiếu trả hàng đã ghi: + đơn bán theo từng nhóm ngành (tổng tiền đã gồm thuế), − hàng bán bị trả lại/giảm giá. Diễn giải có ký hiệu-số HĐĐT (nếu đã nhập), số đơn nội bộ, “khách lẻ”/tên khách.
+- **Hủy chứng từ**: nếu bút toán hủy cùng tháng với chứng từ gốc thì bỏ cả hai; nếu hủy ở tháng sau thì ghi dòng điều chỉnh ngược dấu vào ngày hủy — sổ của tháng đã khóa/đã in không thay đổi.
+- Chế độ **Từng nghiệp vụ** hoặc **Tổng hợp theo ngày** (TT152 Đ4.2.b cho phép ghi theo nghiệp vụ hoặc định kỳ).
+- Địa điểm: sổ lập riêng từng địa điểm; đơn chưa gắn địa điểm được tính cho trụ sở. “Tất cả địa điểm” chỉ là bản tổng hợp để xem.
+- `book_s1a_check`: tổng S1a = doanh thu thuần sổ cái (511 − 521, cộng 3331 của đơn legacy có VAT) cùng kỳ; e2e và test DB kiểm tra khớp theo tháng/năm.
+- Khóa sổ: dùng khóa kỳ kế toán theo tháng có sẵn (`close_period`), hiện ngay trên trang Sổ sách (chủ hộ).
+- `book_exports`: mỗi lần xuất ghi loại, kỳ, địa điểm, định dạng, tên file, **SHA-256**, số dòng, tổng tiền, phiên bản mẫu, người xuất; chỉ thêm, không sửa/xóa.
+
+### Giao diện
+**Sổ sách** (`/books`): chọn kỳ (tháng/quý/6 tháng/năm/tự chọn), địa điểm, cách ghi; xem trước đúng cột của mẫu; nút **Excel (.xlsx)** / **PDF** (`/api/books/s1a`); thẻ đối chiếu sổ cái; tổng hợp theo nhóm ngành; trạng thái khóa từng tháng; lịch sử xuất kèm SHA-256.
+
+### Quyết định cần chủ xác nhận (A5)
+1. **Số tiền trên S1a = tổng tiền thanh toán (đã gồm thuế)** trừ trả hàng/giảm giá (ND68 Đ5, giá đã gồm VAT). Đơn legacy có VAT tách: cộng cả VAT.
+2. **Hủy chứng từ khác tháng = dòng điều chỉnh âm ở tháng hủy** (không sửa sổ tháng cũ); hủy cùng tháng thì không lên sổ.
+3. **Sổ lập theo từng địa điểm**; đơn cũ chưa gắn địa điểm tính cho trụ sở.
+4. **Ngày ghi sổ = ngày chứng từ** (ngày đơn bán / phiếu trả), không phải ngày nhập liệu.
+5. Bảng **theo nhóm ngành để ở sheet riêng**, sheet chính chỉ 3 cột đúng mẫu.
+6. Ký số / lưu bản scan đã ký **chưa làm**; app chỉ lưu SHA-256 file đã xuất.
