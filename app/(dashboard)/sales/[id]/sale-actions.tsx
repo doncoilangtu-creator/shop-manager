@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import type { ActionResult } from "@/lib/actions/_shared";
 import { formatVND } from "@/lib/utils";
 import { MoneyAccountSelect } from "@/components/money/account-select";
 import type { MoneyAccountOption } from "@/lib/money/schema";
+import { einvoiceOriginalChoices, type EinvMode, type EinvoiceOption } from "@/lib/einvoice/originals";
 
 const selectCls = "h-9 w-full rounded-md border bg-background px-2 text-sm";
 
@@ -66,25 +67,75 @@ export function CancelEinvoiceButton({ saleId, einvoiceId }: { saleId: string; e
   );
 }
 
-export function EinvoiceForm({ saleId, hasActive }: { saleId: string; hasActive: boolean }) {
+const MODE_LABEL: Record<EinvMode, string> = { original: "Ghi mới", replace: "Thay thế", adjust: "Điều chỉnh" };
+const EMPTY_EINV = { symbol: "", number: "", lookup_code: "", lookup_url: "", provider: "", issued_on: "", cqt_code: "", pdf_url: "", adjust_amount: "", adjust_reason: "", note: "" };
+const einvLabel = (e: EinvoiceOption) => `${e.symbol ? `${e.symbol} · ` : ""}${e.number} (${e.status === "issued" ? "còn hiệu lực" : e.status === "cancelled" ? "đã hủy" : "đã bị thay thế"})`;
+
+export function EinvoiceForm({ saleId, hasActive, invoices = [] }: { saleId: string; hasActive: boolean; invoices?: EinvoiceOption[] }) {
   const { pending, error, run } = useAct();
   const [open, setOpen] = useState(false);
-  const [v, setV] = useState({ symbol: "", number: "", lookup_code: "", lookup_url: "", provider: "", issued_on: "" });
-  if (!open) return <Button size="sm" variant="outline" onClick={() => setOpen(true)}>{hasActive ? "Ghi hóa đơn thay thế" : "Nhập số hóa đơn điện tử"}</Button>;
+  const initialMode: EinvMode = hasActive ? "replace" : "original";
+  const [mode, setMode] = useState<EinvMode>(initialMode);
+  const [v, setV] = useState(EMPTY_EINV);
+  const choices = einvoiceOriginalChoices(invoices, mode);
+  const [orig, setOrig] = useState<string>("");
+  const origId = choices.some((c) => c.id === orig) ? orig : (choices[choices.length - 1]?.id ?? "");
+  const pickMode = (m: EinvMode) => { setMode(m); setOrig(""); };
+  const reset = () => { setOpen(false); setV(EMPTY_EINV); setMode(initialMode); setOrig(""); };
+  const set = (k: keyof typeof EMPTY_EINV) => (e: ChangeEvent<HTMLInputElement>) => setV({ ...v, [k]: e.target.value });
+  const needOrig = mode !== "original";
+
+  if (!open) return <Button size="sm" variant="outline" onClick={() => setOpen(true)}>{hasActive ? "Ghi hóa đơn thay thế / điều chỉnh" : "Nhập số hóa đơn điện tử"}</Button>;
   return (
     <form className="space-y-2 rounded-md border p-3" onSubmit={(e) => {
       e.preventDefault();
-      run(() => recordEinvoiceAction(saleId, { ...v, kind: hasActive ? "replace" : "original" }), "Đã lưu hóa đơn điện tử", () => { setOpen(false); setV({ symbol: "", number: "", lookup_code: "", lookup_url: "", provider: "", issued_on: "" }); });
+      if (needOrig && !origId) return void toast.error("Chọn hóa đơn gốc");
+      const base = { symbol: v.symbol, number: v.number, lookup_code: v.lookup_code, lookup_url: v.lookup_url, provider: v.provider, issued_on: v.issued_on, cqt_code: v.cqt_code, pdf_url: v.pdf_url, note: v.note };
+      const payload =
+        mode === "original" ? { ...base, kind: "original" as const }
+        : mode === "replace" ? { ...base, kind: "replace" as const, replaces_id: origId }
+        : { ...base, kind: "adjust" as const, replaces_id: origId, adjust_amount: v.adjust_amount, adjust_reason: v.adjust_reason };
+      run(() => recordEinvoiceAction(saleId, payload), mode === "original" ? "Đã lưu hóa đơn điện tử" : mode === "replace" ? "Đã lưu hóa đơn thay thế" : "Đã lưu hóa đơn điều chỉnh", reset);
     }}>
+      <p className="text-xs text-muted-foreground">HĐĐT có bắt buộc hay không tùy Thuế cơ sở quản lý hộ kinh doanh. Hệ thống chỉ lưu thông tin hóa đơn do nhà cung cấp phát hành.</p>
       <div className="grid gap-2 md:grid-cols-3">
-        <div className="space-y-1"><Label htmlFor="ei-sym">Ký hiệu</Label><Input id="ei-sym" placeholder="C26TAA" value={v.symbol} onChange={(e) => setV({ ...v, symbol: e.target.value })} /></div>
-        <div className="space-y-1"><Label htmlFor="ei-num">Số hóa đơn *</Label><Input id="ei-num" required value={v.number} onChange={(e) => setV({ ...v, number: e.target.value })} /></div>
-        <div className="space-y-1"><Label htmlFor="ei-date">Ngày lập</Label><Input id="ei-date" type="date" value={v.issued_on} onChange={(e) => setV({ ...v, issued_on: e.target.value })} /></div>
-        <div className="space-y-1"><Label htmlFor="ei-code">Mã tra cứu</Label><Input id="ei-code" value={v.lookup_code} onChange={(e) => setV({ ...v, lookup_code: e.target.value })} /></div>
-        <div className="space-y-1 md:col-span-2"><Label htmlFor="ei-url">Đường dẫn tra cứu</Label><Input id="ei-url" placeholder="https://" value={v.lookup_url} onChange={(e) => setV({ ...v, lookup_url: e.target.value })} /></div>
-        <div className="space-y-1 md:col-span-3"><Label htmlFor="ei-prov">Nhà cung cấp hóa đơn</Label><Input id="ei-prov" value={v.provider} onChange={(e) => setV({ ...v, provider: e.target.value })} /></div>
+        <div className="space-y-1">
+          <Label htmlFor="ei-mode">Loại ghi nhận</Label>
+          <select id="ei-mode" className={selectCls} value={mode} onChange={(e) => pickMode(e.target.value as EinvMode)}>
+            {(Object.keys(MODE_LABEL) as EinvMode[]).map((m) => (
+              <option key={m} value={m} disabled={m === "original" ? hasActive : einvoiceOriginalChoices(invoices, m).length === 0}>{MODE_LABEL[m]}</option>
+            ))}
+          </select>
+        </div>
+        {needOrig && (
+          <div className="space-y-1 md:col-span-2">
+            <Label htmlFor="ei-orig">{mode === "replace" ? "Hóa đơn gốc bị thay thế *" : "Hóa đơn gốc được điều chỉnh *"}</Label>
+            <select id="ei-orig" className={selectCls} value={origId} onChange={(e) => setOrig(e.target.value)} required>
+              {choices.length === 0 && <option value="">— Không có hóa đơn phù hợp —</option>}
+              {choices.map((c) => <option key={c.id} value={c.id}>{einvLabel(c)}</option>)}
+            </select>
+          </div>
+        )}
       </div>
-      {hasActive && <p className="text-xs text-muted-foreground">Bản đang hiệu lực sẽ chuyển sang “Đã bị thay thế”.</p>}
+      {mode === "adjust" && (
+        <div className="grid gap-2 md:grid-cols-3">
+          <div className="space-y-1"><Label htmlFor="ei-adj-amt">Số tiền điều chỉnh *</Label><Input id="ei-adj-amt" inputMode="decimal" placeholder="-50000 = giảm, 50000 = tăng" required value={v.adjust_amount} onChange={set("adjust_amount")} /></div>
+          <div className="space-y-1 md:col-span-2"><Label htmlFor="ei-adj-reason">Lý do điều chỉnh *</Label><Input id="ei-adj-reason" required minLength={5} maxLength={500} value={v.adjust_reason} onChange={set("adjust_reason")} /></div>
+        </div>
+      )}
+      <p className="text-xs font-medium">{mode === "original" ? "Thông tin hóa đơn" : mode === "replace" ? "Thông tin hóa đơn thay thế (mới)" : "Thông tin hóa đơn điều chỉnh"}</p>
+      <div className="grid gap-2 md:grid-cols-3">
+        <div className="space-y-1"><Label htmlFor="ei-sym">Ký hiệu</Label><Input id="ei-sym" placeholder="C26TAA" value={v.symbol} onChange={set("symbol")} /></div>
+        <div className="space-y-1"><Label htmlFor="ei-num">Số hóa đơn *</Label><Input id="ei-num" required value={v.number} onChange={set("number")} /></div>
+        <div className="space-y-1"><Label htmlFor="ei-date">Ngày lập</Label><Input id="ei-date" type="date" value={v.issued_on} onChange={set("issued_on")} /></div>
+        <div className="space-y-1"><Label htmlFor="ei-cqt">Mã của cơ quan thuế</Label><Input id="ei-cqt" placeholder="Nếu là hóa đơn có mã" value={v.cqt_code} onChange={set("cqt_code")} /></div>
+        <div className="space-y-1"><Label htmlFor="ei-code">Mã tra cứu</Label><Input id="ei-code" value={v.lookup_code} onChange={set("lookup_code")} /></div>
+        <div className="space-y-1"><Label htmlFor="ei-prov">Nhà cung cấp hóa đơn</Label><Input id="ei-prov" value={v.provider} onChange={set("provider")} /></div>
+        <div className="space-y-1 md:col-span-3 lg:col-span-1"><Label htmlFor="ei-url">Đường dẫn tra cứu</Label><Input id="ei-url" placeholder="https://" value={v.lookup_url} onChange={set("lookup_url")} /></div>
+        <div className="space-y-1 md:col-span-3 lg:col-span-2"><Label htmlFor="ei-pdf">Đường dẫn PDF</Label><Input id="ei-pdf" placeholder="https://" value={v.pdf_url} onChange={set("pdf_url")} /></div>
+      </div>
+      {mode === "replace" && <p className="text-xs text-muted-foreground">Hóa đơn gốc còn hiệu lực sẽ chuyển sang “Đã bị thay thế”; hóa đơn gốc đã hủy giữ nguyên trạng thái.</p>}
+      {mode === "adjust" && <p className="text-xs text-muted-foreground">Hóa đơn gốc vẫn còn hiệu lực; số tiền điều chỉnh chỉ để đối chiếu, không tự tạo bút toán (dùng “Hàng bán trả lại / giảm giá” để ghi sổ).</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2"><Button type="submit" size="sm" disabled={pending}>{pending ? "Đang lưu…" : "Lưu"}</Button><Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Đóng</Button></div>
     </form>
