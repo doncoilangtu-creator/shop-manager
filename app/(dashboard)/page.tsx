@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Package, AlertTriangle, Briefcase, Wrench, Receipt, TrendingUp } from "lucide-react";
+import { Package, AlertTriangle, Briefcase, Wrench, Receipt, TrendingUp, Zap } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { parseDashboard, rpcOrThrow } from "@/lib/reports";
 import { formatVND, formatDate } from "@/lib/utils";
